@@ -1,332 +1,241 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { createWorker } from "tesseract.js";
-import PageLayout from "./PageLayout";
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Upload, FileText, Camera, CheckCircle, AlertCircle, ChevronRight, X } from 'lucide-react';
+import PageLayout from './PageLayout';
+import api from '../api/client';
 
-function CBCAnalysis() {
-
-  const navigate = useNavigate();
-
-  const [cbc, setCbc] = useState({
-    hb: "",
-    rbc: "",
-    mcv: "",
-    mch: "",
-    mchc: "",
-    hematocrit: "",
-    rdw: ""
-  });
-  const [cbcFileName, setCbcFileName] = useState("");
-  const [scanName, setScanName] = useState("");
-  const [scanData, setScanData] = useState({});
-  const [reportStatus, setReportStatus] = useState("");
-  const [scanStatus, setScanStatus] = useState("");
-  const [isReading, setIsReading] = useState(false);
-
-  const change = (e) => {
-    setCbc({
-      ...cbc,
-      [e.target.name]: e.target.value
-    });
-  };
-
-  const analyze = (e) => {
-    e.preventDefault();
-
-    const gestationalWeek = getGestationalWeek(scanData.gestationalAge);
-
-    localStorage.setItem("cbcData", JSON.stringify(cbc));
-    localStorage.setItem("scanData", JSON.stringify({ name: scanName, uploaded: Boolean(scanName), values: scanData, uploadedAt: new Date().toISOString() }));
-    localStorage.setItem("pregnancyData", JSON.stringify({
-      week: gestationalWeek || "",
-      symptoms: []
-    }));
-
-    navigate("/ai-analysis");
-  };
-
-  const readScanReport = async (e) => {
-    const file = e.target.files[0];
-    setScanName(file?.name || "");
-    setScanData({});
-    setScanStatus("");
-    if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      setScanStatus("PDF selected. Upload a JPG or PNG to read scan measurements automatically.");
-      if (e.target) e.target.value = "";
-      return;
-    }
-
-    setIsReading(true);
-    setScanStatus("Reading the pregnancy scan report...");
-    let worker;
-    try {
-      worker = await createWorker("eng");
-      const text = await readScanText(worker, file);
-      const values = extractScanValues(text);
-      setScanData(values);
-      setScanStatus(Object.keys(values).length
-        ? "Pregnancy scan measurements recognized."
-        : "Scan uploaded, but no readable measurements were found. The original scan is still saved.");
-    } catch {
-      setScanStatus("Scan uploaded, but its text could not be read. The original scan is still saved.");
-    } finally {
-      if (worker) await worker.terminate();
-      setIsReading(false);
-      if (e.target) e.target.value = "";
-    }
-  };
-
-  const readCbcReport = async (e) => {
-    const file = e.target.files[0];
-    setCbcFileName(file?.name || "");
-    setReportStatus("");
-    setCbc({
-      hb: "",
-      rbc: "",
-      mcv: "",
-      mch: "",
-      mchc: "",
-      hematocrit: "",
-      rdw: ""
-    });
-    if (!file || !file.type.startsWith("image/")) {
-      setReportStatus("Upload a JPG or PNG CBC blood report for automatic reading.");
-      if (e.target) e.target.value = "";
-      return;
-    }
-
-    setIsReading(true);
-    setReportStatus("Reading the CBC report...");
-    let worker;
-    try {
-      worker = await createWorker("eng");
-      const { data } = await worker.recognize(file);
-      const values = extractCbcValues(data.text);
-      setCbc((current) => ({ ...current, ...values }));
-      setReportStatus(Object.keys(values).length
-        ? `Copied ${Object.keys(values).length} value(s) from the CBC report.`
-        : "No CBC values found. Upload a blood report containing Hb, RBC, MCV, MCH, MCHC, HCT, and RDW.");
-    } catch {
-      setReportStatus("The CBC report could not be read. Upload a clearer image.");
-    } finally {
-      if (worker) await worker.terminate();
-      setIsReading(false);
-      if (e.target) e.target.value = "";
-    }
-  };
-
-  return (
-    <PageLayout title="CBC Report Analysis" eyebrow="LAB ANALYSIS" activePath="/cbc-analysis" description="Enter the values from your Complete Blood Count report for a preliminary screening review.">
-      <form className="cbc-card" onSubmit={analyze}>
-        <div className="cbc-card-heading"><div><span className="card-kicker">REPORT VALUES</span><h2>Complete Blood Count</h2><p>Use the units printed on your report.</p></div><div className="lab-badge">CBC<small>ANALYSIS</small></div></div>
-
-        <div className="cbc-grid">
-
-          <CBCInput
-            name="hb"
-            label="Hemoglobin"
-            unit="g/dL"
-            value={cbc.hb}
-            onChange={change}
-          />
-
-          <CBCInput
-            name="rbc"
-            label="RBC"
-            unit="million/µL"
-            value={cbc.rbc}
-            onChange={change}
-          />
-
-          <CBCInput
-            name="mcv"
-            label="MCV"
-            unit="fL"
-            value={cbc.mcv}
-            onChange={change}
-          />
-
-          <CBCInput
-            name="mch"
-            label="MCH"
-            unit="pg"
-            value={cbc.mch}
-            onChange={change}
-          />
-
-          <CBCInput
-            name="mchc"
-            label="MCHC"
-            unit="g/dL"
-            value={cbc.mchc}
-            onChange={change}
-          />
-
-          <CBCInput
-            name="hematocrit"
-            label="Hematocrit"
-            unit="%"
-            value={cbc.hematocrit}
-            onChange={change}
-          />
-
-          <CBCInput
-            name="rdw"
-            label="RDW"
-            unit="%"
-            value={cbc.rdw}
-            onChange={change}
-          />
-
-        </div>
-
-        <div className="upload-box">
-          📄
-          <strong>CBC Report Upload</strong>
-          <span>Add your blood report if you have a digital copy.</span>
-          <input type="file" accept=".jpg,.jpeg,.png" onChange={readCbcReport} />
-          {cbcFileName && <span className="upload-name">Selected: {cbcFileName}</span>}
-          {reportStatus && <span className="upload-status">{reportStatus}</span>}
-        </div>
-
-        <div className="upload-box scan-upload">
-          🖥️
-          <strong>Pregnancy Scan Report <em>Optional</em></strong>
-          <span>Upload an ultrasound or pregnancy scan report when available.</span>
-          <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={readScanReport} />
-          {scanName && <span className="upload-name">Selected: {scanName}</span>}
-          {scanStatus && <span className="upload-status">{scanStatus}</span>}
-        </div>
-
-        <button className="analyze-btn" disabled={isReading}>
-          🤖 Analyze My CBC →
-        </button>
-
-      </form>
-    </PageLayout>
-  );
-}
-
-function normalizeOcrText(text = "") {
-  return text
-    .replace(/\r/g, "")
-    .replace(/µ|μ/g, "u")
-    .replace(/[|]/g, "I")
-    .replace(/[,]/g, ".")
-    .replace(/\s+/g, " ")
-    .trim();
+// ---- OCR Utilities (preserved from original) ----
+function normalizeOcrText(text) {
+  return text.replace(/[|l1]/g, '').replace(/[oO0]/g, '0').replace(/,/g, '.').replace(/\s+/g, ' ');
 }
 
 function extractNumber(text, patterns) {
   for (const pattern of patterns) {
     const match = text.match(pattern);
-    if (match && match[1]) {
-      return match[1].replace(/[^\d.]/g, "") || match[1];
+    if (match) {
+      const num = parseFloat(match[1]);
+      if (!isNaN(num)) return num;
     }
   }
-  return "";
+  return null;
 }
 
 function extractCbcValues(text) {
-  const reportText = normalizeOcrText(text).toLowerCase();
-  const labels = {
-    hb: [
-      /(?:hemoglobin|haemoglobin|hgb|\bhb\b)[^\d\n]{0,25}(\d{1,3}(?:[.,]\d{1,2})?)/i,
-      /(?:\bhb\b|hgb)[^\d\n]{0,12}(\d{1,3}(?:[.,]\d{1,2})?)/i,
-    ],
-    rbc: [
-      /(?:rbc|red\s*blood\s*cell(?:s)?|r8c)[^\d\n]{0,25}(\d{1,3}(?:[.,]\d{1,2})?)/i,
-      /(?:\brbc\b|red\s*blood\s*cell(?:s)?)\D{0,25}(\d{1,3}(?:[.,]\d{1,2})?)/i,
-    ],
-    mcv: [/\bmcv\b\D{0,20}(\d{1,3}(?:[.,]\d{1,2})?)/i],
-    mch: [/\bmch(?!c)\b\D{0,20}(\d{1,3}(?:[.,]\d{1,2})?)/i],
-    mchc: [/\bmchc\b\D{0,20}(\d{1,3}(?:[.,]\d{1,2})?)/i],
-    hematocrit: [
-      /(?:hematocrit|haematocrit|hct|pcv)[^\d\n]{0,25}(\d{1,3}(?:[.,]\d{1,2})?)/i,
-      /\b(?:hct|pcv)\b\D{0,20}(\d{1,3}(?:[.,]\d{1,2})?)/i,
-    ],
-    rdw: [/\brdw(?:[- ]?cv)?\b\D{0,20}(\d{1,3}(?:[.,]\d{1,2})?)/i],
+  const t = normalizeOcrText(text).toLowerCase();
+  return {
+    hb: extractNumber(t, [/h(?:ae?moglobin|b)\D{0,10}(\d{1,3}(?:\.\d{1,2})?)/i, /hgb\D{0,10}(\d{1,3}(?:\.\d{1,2})?)/i]),
+    rbc: extractNumber(t, [/r\.?b\.?c\D{0,15}(\d{1,2}(?:\.\d{1,2})?)/i, /red blood cell\D{0,15}(\d{1,2}(?:\.\d{1,2})?)/i]),
+    mcv: extractNumber(t, [/mcv\D{0,10}(\d{2,3}(?:\.\d{1,2})?)/i, /mean corp\w*\s+vol\D{0,10}(\d{2,3}(?:\.\d{1,2})?)/i]),
+    mch: extractNumber(t, [/\bmch\b\D{0,10}(\d{2,3}(?:\.\d{1,2})?)/i]),
+    mchc: extractNumber(t, [/mchc\D{0,10}(\d{2,3}(?:\.\d{1,2})?)/i]),
+    hematocrit: extractNumber(t, [/h(?:ae?matocrit|ct|cv)\D{0,10}(\d{2,3}(?:\.\d{1,2})?)/i, /pcv\D{0,10}(\d{2,3}(?:\.\d{1,2})?)/i]),
+    rdw: extractNumber(t, [/rdw\D{0,10}(\d{1,2}(?:\.\d{1,2})?)/i]),
+    ferritin: extractNumber(t, [/ferritin\D{0,10}(\d{1,3}(?:\.\d{1,2})?)/i]),
+  };
+}
+
+const FIELD_META = [
+  { key: 'hb', label: 'Haemoglobin (Hb)', unit: 'g/dL', placeholder: 'e.g. 11.5', required: true },
+  { key: 'rbc', label: 'RBC Count', unit: 'million/µL', placeholder: 'e.g. 4.2' },
+  { key: 'mcv', label: 'MCV', unit: 'fL', placeholder: 'e.g. 85' },
+  { key: 'mch', label: 'MCH', unit: 'pg', placeholder: 'e.g. 28' },
+  { key: 'mchc', label: 'MCHC', unit: 'g/dL', placeholder: 'e.g. 32' },
+  { key: 'hematocrit', label: 'Hematocrit (HCT)', unit: '%', placeholder: 'e.g. 36' },
+  { key: 'rdw', label: 'RDW', unit: '%', placeholder: 'e.g. 13.5' },
+  { key: 'ferritin', label: 'Ferritin', unit: 'ng/mL', placeholder: 'e.g. 25' },
+];
+
+function CBCAnalysis() {
+  const navigate = useNavigate();
+  const fileRef = useRef(null);
+
+  const [values, setValues] = useState({ hb: '', rbc: '', mcv: '', mch: '', mchc: '', hematocrit: '', rdw: '', ferritin: '' });
+  const [file, setFile] = useState(null);
+  const [ocrStatus, setOcrStatus] = useState(''); // 'processing' | 'done' | 'error' | ''
+  const [ocrMessage, setOcrMessage] = useState('');
+  const [ocrConfirmed, setOcrConfirmed] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [reportDate, setReportDate] = useState(new Date().toISOString().split('T')[0]);
+
+  const handleFile = async (f) => {
+    if (!f) return;
+    setFile(f);
+    setOcrStatus('processing');
+    setOcrMessage('Extracting text from your report...');
+    setOcrConfirmed(false);
+
+    try {
+      if (f.type === 'application/pdf') {
+        // PDF.js extraction
+        const { getDocument } = await import('pdfjs-dist');
+        const pdfjsWorker = await import('pdfjs-dist/build/pdf.worker.min.mjs');
+        const { GlobalWorkerOptions } = await import('pdfjs-dist');
+        GlobalWorkerOptions.workerSrc = pdfjsWorker.default || '/pdf.worker.min.js';
+        const buffer = await f.arrayBuffer();
+        const pdf = await getDocument({ data: buffer }).promise;
+        let fullText = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          fullText += content.items.map(item => item.str).join(' ') + '\n';
+        }
+        const extracted = extractCbcValues(fullText);
+        setValues(v => {
+          const updated = { ...v };
+          Object.keys(extracted).forEach(k => { if (extracted[k] !== null) updated[k] = String(extracted[k]); });
+          return updated;
+        });
+        const found = Object.values(extracted).filter(v => v !== null).length;
+        setOcrStatus('done');
+        setOcrMessage(`PDF parsed. Found ${found} CBC values. Please verify and confirm below.`);
+      } else {
+        // Tesseract OCR for images
+        const { createWorker } = await import('tesseract.js');
+        const worker = await createWorker('eng');
+        const url = URL.createObjectURL(f);
+        const { data: { text } } = await worker.recognize(url);
+        await worker.terminate();
+        URL.revokeObjectURL(url);
+        const extracted = extractCbcValues(text);
+        setValues(v => {
+          const updated = { ...v };
+          Object.keys(extracted).forEach(k => { if (extracted[k] !== null) updated[k] = String(extracted[k]); });
+          return updated;
+        });
+        const found = Object.values(extracted).filter(v => v !== null).length;
+        setOcrStatus('done');
+        setOcrMessage(`OCR complete. Found ${found} CBC values. Please verify all values before confirming.`);
+      }
+    } catch (err) {
+      setOcrStatus('error');
+      setOcrMessage('OCR failed: ' + err.message + '. Please enter values manually.');
+    }
   };
 
-  const values = {};
-  for (const [name, patterns] of Object.entries(labels)) {
-    const parsed = extractNumber(reportText, patterns);
-    if (parsed) values[name] = parsed;
-  }
-
-  return values;
-}
-
-function getGestationalWeek(value) {
-  if (!value) return "";
-  const match = String(value).match(/(\d{1,2})/);
-  return match ? Number(match[1]) : "";
-}
-
-function extractScanValues(text) {
-  const reportText = normalizeOcrText(text).toLowerCase();
-  const patterns = {
-    gestationalAge: [
-      /(?:gestational(?:\s+age)?|ga)[^\d\n]{0,25}(\d{1,2})\s*(?:weeks?|wks?|w)\s*(?:\d{1,2}\s*(?:days?|d))?/i,
-      /(?:gestational(?:\s+age)?|ga)[^\d\n]{0,25}(\d{1,2})/i,
-    ],
-    fetalHeartRate: [
-      /(?:fetal\s+heart\s+rate|\bfhr\b)[^\d\n]{0,25}(\d{2,3})\s*(?:bpm|beats?\s*\/\s*min)?/i,
-      /\b(?:fhr|fetal\s+heart)\b[^\d\n]{0,25}(\d{2,3})/i,
-    ],
-    estimatedWeight: [
-      /(?:estimated\s+fetal\s+weight|\befw\b)[^\d\n]{0,25}(\d{2,5})\s*(?:g|grams?)/i,
-      /\b(?:efw|estimated\s+fetal\s+weight)\b[^\d\n]{0,25}(\d{2,5})/i,
-    ],
-    biparietalDiameter: [/\bbpd\b[^\d\n]{0,20}(\d+(?:[.,]\d+)?)\s*(?:cm|mm)?/i],
-    headCircumference: [/\bhc\b[^\d\n]{0,20}(\d+(?:[.,]\d+)?)\s*(?:cm|mm)?/i],
-    abdominalCircumference: [/\bac\b[^\d\n]{0,20}(\d+(?:[.,]\d+)?)\s*(?:cm|mm)?/i],
-    femurLength: [/\b(?:femur\s+length|fl)\b[^\d\n]{0,20}(\d+(?:[.,]\d+)?)\s*(?:cm|mm)?/i],
+  const handleDrop = (e) => {
+    e.preventDefault();
+    const f = e.dataTransfer.files[0];
+    if (f) handleFile(f);
   };
 
-  return Object.fromEntries(
-    Object.entries(patterns)
-      .map(([name, patternList]) => [name, extractNumber(reportText, patternList)])
-      .filter(([, value]) => value)
-  );
-}
-
-async function readScanText(worker, file) {
-  const original = await worker.recognize(file);
-  const image = await createImageBitmap(file);
-  const canvas = document.createElement("canvas");
-  canvas.width = image.width * 2;
-  canvas.height = image.height * 2;
-  const context = canvas.getContext("2d");
-  context.filter = "grayscale(1) contrast(1.5)";
-  context.drawImage(image, 0, 0, canvas.width, canvas.height);
-  image.close();
-  const enhanced = await worker.recognize(canvas);
-  return `${original.data.text}\n${enhanced.data.text}`;
-}
-
-function CBCInput({ name, label, unit, value, onChange }) {
+  const handleSave = async () => {
+    if (!values.hb) { setError('Haemoglobin (Hb) is required for anemia screening.'); return; }
+    setError('');
+    setSaving(true);
+    try {
+      const body = {
+        ...Object.fromEntries(Object.entries(values).filter(([, v]) => v !== '')),
+        reportDate,
+        ocrExtracted: ocrStatus === 'done',
+        ocrConfirmed,
+        uploadedFileName: file?.name || '',
+      };
+      const data = await api.post('/reports', body);
+      const reportId = data.report._id;
+      navigate('/health-check', { state: { reportId } });
+    } catch (err) {
+      setError(err.message || 'Failed to save report.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
-    <div className="cbc-input">
-
-      <label>{label}</label>
-
-      <div>
-        <input
-          name={name}
-          type="number"
-          step="any"
-          value={value}
-          onChange={onChange}
-          placeholder="From CBC report"
-        />
-
-        <span>{unit}</span>
+    <PageLayout title="CBC Analysis" activePath="/cbc-analysis" description="Upload your Complete Blood Count report or enter values manually">
+      <div className="alert alert-info" style={{ marginBottom: 24 }}>
+        <AlertCircle size={16} />
+        Haemoglobin (Hb) is required. All other values are optional but improve screening accuracy.
       </div>
 
-    </div>
+      {/* Upload zone */}
+      <div className="section-card" style={{ marginBottom: 24 }}>
+        <h2 style={{ fontSize: 16, marginBottom: 4 }}><Upload size={18} /> Upload Report</h2>
+        <p style={{ fontSize: 13, color: '#9CA3AF', marginBottom: 16 }}>Supports JPG, PNG, PDF. OCR will extract CBC values automatically.</p>
+
+        <div
+          className={`upload-zone ${file ? 'dragging' : ''}`}
+          onDrop={handleDrop}
+          onDragOver={e => e.preventDefault()}
+          onClick={() => fileRef.current?.click()}
+        >
+          <input ref={fileRef} type="file" accept="image/*,.pdf" style={{ display: 'none' }} onChange={e => handleFile(e.target.files[0])} />
+          {file ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'center' }}>
+              <FileText size={28} color="#C0392B" />
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>{file.name}</div>
+                <div style={{ fontSize: 12, color: '#9CA3AF' }}>{(file.size / 1024).toFixed(1)} KB</div>
+              </div>
+              <button onClick={e => { e.stopPropagation(); setFile(null); setOcrStatus(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF' }}><X size={18} /></button>
+            </div>
+          ) : (
+            <>
+              <Camera size={40} style={{ margin: '0 auto 12px', display: 'block', color: '#9CA3AF' }} />
+              <p style={{ fontWeight: 600 }}>Drag & drop or click to upload</p>
+              <p style={{ fontSize: 13, color: '#9CA3AF', marginTop: 4 }}>JPG, PNG, PDF up to 10 MB</p>
+            </>
+          )}
+        </div>
+
+        {ocrStatus && (
+          <div className={`ocr-status ${ocrStatus}`}>
+            {ocrStatus === 'processing' && <div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} />}
+            {ocrStatus === 'done' && <CheckCircle size={18} />}
+            {ocrStatus === 'error' && <AlertCircle size={18} />}
+            <span>{ocrMessage}</span>
+          </div>
+        )}
+
+        {ocrStatus === 'done' && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14, fontSize: 14, cursor: 'pointer' }}>
+            <input type="checkbox" checked={ocrConfirmed} onChange={e => setOcrConfirmed(e.target.checked)} style={{ width: 18, height: 18 }} />
+            <span>I have verified all extracted values are correct</span>
+          </label>
+        )}
+      </div>
+
+      {/* Manual entry */}
+      <div className="section-card">
+        <h2 style={{ fontSize: 16, marginBottom: 4 }}><FileText size={18} /> CBC Values</h2>
+        <p style={{ fontSize: 13, color: '#9CA3AF', marginBottom: 20 }}>Enter or confirm values from your report. <strong>Hb is required.</strong></p>
+
+        <div className="form-group" style={{ maxWidth: 240, marginBottom: 20 }}>
+          <label>Report Date</label>
+          <input type="date" value={reportDate} onChange={e => setReportDate(e.target.value)} />
+        </div>
+
+        <div className="cbc-grid">
+          {FIELD_META.map(({ key, label, unit, placeholder, required }) => (
+            <div key={key} className="cbc-field">
+              <label>{label}{required && <span style={{ color: '#C0392B' }}> *</span>}</label>
+              <input
+                type="number"
+                step="0.01"
+                placeholder={placeholder}
+                value={values[key]}
+                onChange={e => setValues(v => ({ ...v, [key]: e.target.value }))}
+              />
+              <small>{unit}</small>
+            </div>
+          ))}
+        </div>
+
+        {error && <div className="alert alert-error" style={{ marginTop: 16 }}><AlertCircle size={16} />{error}</div>}
+
+        <div style={{ display: 'flex', gap: 16, marginTop: 24, alignItems: 'center' }}>
+          <button
+            className="btn-submit"
+            style={{ width: 'auto', padding: '12px 32px', display: 'flex', alignItems: 'center', gap: 8 }}
+            onClick={handleSave}
+            disabled={saving || !values.hb}
+          >
+            {saving ? 'Saving...' : <><span>Save & Continue to Symptom Check</span><ChevronRight size={16} /></>}
+          </button>
+          <p style={{ fontSize: 13, color: '#9CA3AF' }}>You will assess symptoms next, then get your screening result.</p>
+        </div>
+      </div>
+    </PageLayout>
   );
 }
 

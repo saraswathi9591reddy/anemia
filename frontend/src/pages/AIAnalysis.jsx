@@ -1,116 +1,270 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import PageLayout from "./PageLayout";
+import { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Download, AlertTriangle, CheckCircle, Activity, FileText, ChevronLeft, Info } from 'lucide-react';
+import PageLayout from './PageLayout';
+import api from '../api/client';
+
+const CATEGORY_CONFIG = {
+  no_anemia: {
+    label: 'No Anemia Detected',
+    description: 'Your haemoglobin level is within the normal range for pregnancy (≥ 11.0 g/dL per WHO 2011 guidelines).',
+    className: 'no_anemia',
+    badgeClass: 'badge-green',
+    icon: CheckCircle,
+  },
+  mild_anemia: {
+    label: 'Mild Anemia',
+    description: 'Your haemoglobin is between 10.0–10.9 g/dL. Mild anemia during pregnancy should be discussed with your doctor.',
+    className: 'mild_anemia',
+    badgeClass: 'badge-yellow',
+    icon: AlertTriangle,
+  },
+  moderate_anemia: {
+    label: 'Moderate Anemia',
+    description: 'Your haemoglobin is between 7.0–9.9 g/dL. Moderate anemia requires prompt medical attention.',
+    className: 'moderate_anemia',
+    badgeClass: 'badge-orange',
+    icon: AlertTriangle,
+  },
+  severe_anemia: {
+    label: 'Severe Anemia',
+    description: 'Your haemoglobin is below 7.0 g/dL. Severe anemia is a medical emergency. Seek immediate care.',
+    className: 'severe_anemia',
+    badgeClass: 'badge-red',
+    icon: AlertTriangle,
+  },
+  insufficient_data: {
+    label: 'Insufficient Data',
+    description: 'Haemoglobin value was not provided. Upload a CBC report with Hb value for a complete assessment.',
+    className: 'insufficient_data',
+    badgeClass: 'badge-blue',
+    icon: Info,
+  },
+};
 
 function AIAnalysis() {
-
+  const { id } = useParams();
   const navigate = useNavigate();
-
-  const [result, setResult] = useState(null);
+  const [assessment, setAssessment] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
+    const load = async () => {
+      try {
+        // If no ID, get the latest assessment
+        let data;
+        if (id) {
+          data = await api.get(`/assessments/${id}`);
+          setAssessment(data.assessment);
+        } else {
+          data = await api.get('/assessments');
+          if (data.assessments?.length > 0) setAssessment(data.assessments[0]);
+          else setError('No assessments found. Complete a CBC analysis and symptom check first.');
+        }
+      } catch (err) {
+        setError(err.message || 'Could not load assessment.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [id]);
 
-    const cbc = JSON.parse(localStorage.getItem("cbcData") || "{}");
-    const pregnancy = JSON.parse(localStorage.getItem("pregnancyData") || "{}");
-    const scan = JSON.parse(localStorage.getItem("scanData") || "{}");
-    const symptoms = pregnancy.symptoms || JSON.parse(localStorage.getItem("symptoms") || "[]");
-
-    const hb = Number(cbc.hb) || 0;
-    const mcv = Number(cbc.mcv) || 0;
-    const mch = Number(cbc.mch) || 0;
-    const hct = Number(cbc.hematocrit) || 0;
-    const rbc = Number(cbc.rbc) || 0;
-
-    const anemiaLikely = hb > 0 && (hb < 11 || (mcv > 0 && mcv < 80) || (mch > 0 && mch < 27) || (hct > 0 && hct < 33) || (rbc > 0 && rbc < 3.8));
-    const anemiaStatus = anemiaLikely ? "Anemia likely" : "No anemia detected";
-
-    let score = 0;
-    const factors = [];
-
-    if (hb > 0 && hb < 11) {
-      score += 35;
-      factors.push("Hemoglobin is below the usual pregnancy reference range.");
-    } else if (hb > 0) {
-      factors.push("Hemoglobin is within a healthier pregnancy range.");
+  const handleDownload = async () => {
+    if (!assessment) return;
+    setDownloading(true);
+    try {
+      const token = sessionStorage.getItem('anemiaai_token');
+      const res = await fetch(`/api/download/assessment/${assessment._id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Download failed');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `anemiaai-report-${assessment._id}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Download failed: ' + err.message);
+    } finally {
+      setDownloading(false);
     }
+  };
 
-    if (mcv > 0 && mcv < 80) {
-      score += 20;
-      factors.push("MCV is low, which can support a microcytic anemia pattern.");
-    }
+  if (loading) return <PageLayout title="Screening Result" activePath="/ai-analysis"><div className="loading-center"><div className="spinner" /><p>Loading result...</p></div></PageLayout>;
+  if (error) return <PageLayout title="Screening Result" activePath="/ai-analysis"><div className="alert alert-error"><AlertTriangle size={16} />{error}</div></PageLayout>;
+  if (!assessment) return null;
 
-    if (mch > 0 && mch < 27) {
-      score += 15;
-      factors.push("MCH is low.");
-    }
+  const config = CATEGORY_CONFIG[assessment.screeningCategory] || CATEGORY_CONFIG.insufficient_data;
+  const Icon = config.icon;
+  const report = assessment.bloodReportId;
 
-    if (hct > 0 && hct < 33) {
-      score += 10;
-      factors.push("Hematocrit is lower than expected for pregnancy.");
-    }
-
-    score += Math.min(symptoms.length * 5, 25);
-
-    if (symptoms.length > 0) {
-      factors.push(`${symptoms.length} symptom(s) were reported.`);
-    }
-
-    if (pregnancy.week) factors.push(`Pregnancy week ${pregnancy.week} was included in the screening context.`);
-    if (scan.uploaded) factors.push(`Optional scan report selected: ${scan.name}. A clinician should review the original scan.`);
-
-    let risk = "Low";
-
-    if (score >= 60 || anemiaLikely && score >= 45) risk = "High";
-    else if (score >= 30 || anemiaLikely) risk = "Moderate";
-
-    setResult({
-      score: Math.min(score, 100),
-      risk,
-      anemiaLikely,
-      anemiaStatus,
-      factors,
-      scan,
-      recommendations: risk === "High" ? ["Contact your prenatal care provider promptly with this result.", "Choose iron-rich foods with vitamin C as part of a clinician-approved diet.", "For severe breathlessness, fainting, chest pain, or heavy bleeding, call emergency services."] : ["Continue your prenatal care plan and repeat testing as advised.", "Discuss nutrition and supplements with your prenatal care provider."]
-    });
-    localStorage.setItem("aiResult", JSON.stringify({ score: Math.min(score, 100), risk, anemiaStatus, completedAt: new Date().toISOString() }));
-
-  }, []);
-
-  if (!result) {
-    return <div className="loading-screen">🤖 Analyzing...</div>;
-  }
+  const yesSymptoms = assessment.symptoms?.filter(s => s.answer === 'yes') || [];
+  const noSymptoms = assessment.symptoms?.filter(s => s.answer === 'no') || [];
 
   return (
-    <PageLayout title="AI Health Analysis" eyebrow="HEMACARE AI ENGINE" activePath="/ai-analysis" description="A preliminary screening based on your symptoms and CBC information.">
-      <section className="ai-result-card">
-        <div className="risk-circle"><strong>{result.score}</strong><span>/100</span></div>
-        <div className="ai-result-copy"><span className="card-kicker">SCREENING RESULT</span><h2>{result.risk} Risk</h2><p>{result.anemiaLikely ? "This CBC pattern is consistent with anemia risk and should be reviewed by a clinician." : "This CBC pattern does not suggest anemia based on the entered values."}</p></div>
-        <span className={`status-pill ${result.risk === "Low" ? "success" : "warning"}`}>{result.anemiaStatus}</span>
-      </section>
-      <section className="content-card factor-card">
-        <div className="card-heading"><h2>Pregnancy scan report</h2><span>{result.scan.uploaded ? "UPLOADED" : "NOT UPLOADED"}</span></div>
-        {result.scan.uploaded ? <>
-          <p>File: {result.scan.name}</p>
-          <div className="cbc-result-grid">
-            <ScanValue label="Gestational age" value={result.scan.values?.gestationalAge} />
-            <ScanValue label="Fetal heart rate" value={result.scan.values?.fetalHeartRate} unit="bpm" />
-            <ScanValue label="Estimated fetal weight" value={result.scan.values?.estimatedWeight} unit="g" />
-            <ScanValue label="BPD" value={result.scan.values?.biparietalDiameter} />
-            <ScanValue label="Head circumference" value={result.scan.values?.headCircumference} />
-            <ScanValue label="Abdominal circumference" value={result.scan.values?.abdominalCircumference} />
-            <ScanValue label="Femur length" value={result.scan.values?.femurLength} />
+    <PageLayout title="Screening Result" activePath="/ai-analysis" description="Clinical rule-based preliminary screening — WHO 2011 guidelines">
+      {assessment.emergencyFlag && (
+        <div className="alert alert-error" style={{ marginBottom: 20 }}>
+          <AlertTriangle size={18} />
+          <div>
+            <strong>Emergency symptoms reported.</strong> Seek immediate medical attention.
+            Do not rely on this screening tool during a medical emergency.
           </div>
-        </> : <p>No pregnancy scan was uploaded.</p>}
-      </section>
-      <section className="content-card factor-card"><div className="card-heading"><h2>🔍 What influenced your result?</h2><span>{result.factors.length} FACTORS</span></div>{result.factors.length === 0 ? <p>No major factors detected from the entered information.</p> : result.factors.map((factor, index) => <div className="factor-row" key={index}><span>✓</span><p>{factor}</p></div>)}</section>
-      <section className="content-card recommendation-card"><span className="card-kicker">NEXT STEPS</span><h2>Care recommendations</h2>{result.recommendations.map((recommendation) => <p className="recommendation-row" key={recommendation}>→ {recommendation}</p>)}<div className="action-row"><button className="secondary-btn" onClick={() => navigate("/care-plan")}>View Nutrition Plan</button><button className="secondary-btn" onClick={() => navigate("/emergency")}>Emergency Help</button></div></section>
-      <div className="ai-actions"><button className="secondary-btn" onClick={() => navigate("/cbc-analysis")}>← Review CBC</button><button className="primary-btn" onClick={() => navigate("/feedback")}>Share Feedback →</button></div>
+        </div>
+      )}
+
+      {/* Result banner */}
+      <div className={`result-banner ${config.className}`} style={{ marginBottom: 24 }}>
+        <div className="result-banner-icon">
+          <Icon size={28} />
+        </div>
+        <div>
+          <p style={{ fontSize: 13, marginBottom: 4, opacity: 0.7 }}>Preliminary Screening Result</p>
+          <h2>{config.label}</h2>
+          <p style={{ fontSize: 15, marginTop: 6 }}>{config.description}</p>
+          {assessment.hbValue && (
+            <div style={{ marginTop: 12, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              <span className={`result-badge ${config.badgeClass}`}>
+                Hb: {assessment.hbValue} g/dL
+              </span>
+              <span className="result-badge badge-blue">
+                {assessment.guidelineUsed}
+              </span>
+              {assessment.trimester && (
+                <span className="result-badge badge-blue" style={{ textTransform: 'capitalize' }}>
+                  {assessment.trimester} trimester
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 24 }}>
+        {/* CBC Values */}
+        {report && (
+          <div className="section-card">
+            <h2 style={{ fontSize: 16, marginBottom: 16 }}><FileText size={18} /> CBC Report Values</h2>
+            <div className="cbc-result-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
+              {[
+                { key: 'hb', label: 'Haemoglobin', unit: 'g/dL' },
+                { key: 'rbc', label: 'RBC', unit: 'M/µL' },
+                { key: 'mcv', label: 'MCV', unit: 'fL' },
+                { key: 'mch', label: 'MCH', unit: 'pg' },
+                { key: 'mchc', label: 'MCHC', unit: 'g/dL' },
+                { key: 'hematocrit', label: 'Hematocrit', unit: '%' },
+                { key: 'rdw', label: 'RDW', unit: '%' },
+                { key: 'ferritin', label: 'Ferritin', unit: 'ng/mL' },
+              ].filter(f => report[f.key]).map(({ key, label, unit }) => (
+                <div key={key} className="cbc-result-item">
+                  <strong>{label}</strong>
+                  <span>{report[key]}</span>
+                  <small>{unit}</small>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Symptoms */}
+        <div className="section-card">
+          <h2 style={{ fontSize: 16, marginBottom: 16 }}><Activity size={18} /> Reported Symptoms</h2>
+          {yesSymptoms.length > 0 ? (
+            <div style={{ marginBottom: 12 }}>
+              <p style={{ fontSize: 13, fontWeight: 600, color: '#C0392B', marginBottom: 8 }}>Present:</p>
+              {yesSymptoms.map(s => (
+                <div key={s.symptom} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, marginBottom: 6, color: '#C0392B' }}>
+                  <AlertTriangle size={14} />
+                  {s.symptom.replace(/_/g, ' ')}
+                </div>
+              ))}
+            </div>
+          ) : <p style={{ fontSize: 14, color: '#9CA3AF', marginBottom: 12 }}>No symptoms reported as present.</p>}
+          {noSymptoms.length > 0 && (
+            <div>
+              <p style={{ fontSize: 13, fontWeight: 600, color: '#27AE60', marginBottom: 8 }}>Absent:</p>
+              {noSymptoms.map(s => (
+                <div key={s.symptom} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, marginBottom: 6, color: '#27AE60' }}>
+                  <CheckCircle size={14} />
+                  {s.symptom.replace(/_/g, ' ')}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Factors */}
+      {assessment.factors?.length > 0 && (
+        <div className="section-card" style={{ marginBottom: 24 }}>
+          <h2 style={{ fontSize: 16, marginBottom: 16 }}><Info size={18} /> Assessment Factors</h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {assessment.factors.map((f, i) => (
+              <div key={i} style={{ display: 'flex', gap: 10, padding: '10px 14px', background: '#F8F9FA', borderRadius: 8, fontSize: 14 }}>
+                <span style={{ color: '#C0392B', fontWeight: 700, flexShrink: 0 }}>•</span>
+                {f}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Recommendations */}
+      {assessment.recommendations?.length > 0 && (
+        <div className="section-card" style={{ marginBottom: 24 }}>
+          <h2 style={{ fontSize: 16, marginBottom: 16 }}><CheckCircle size={18} /> Recommendations</h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {assessment.recommendations.map((r, i) => (
+              <div key={i} style={{ display: 'flex', gap: 12, padding: '12px 16px', background: '#F0FFF4', borderRadius: 10, fontSize: 14, color: '#1a4731', border: '1px solid #A9DFBF' }}>
+                <CheckCircle size={16} style={{ color: '#27AE60', flexShrink: 0, marginTop: 1 }} />
+                {r}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Missing data */}
+      {assessment.missingData?.length > 0 && (
+        <div className="alert alert-warning" style={{ marginBottom: 24 }}>
+          <Info size={16} />
+          <div>
+            <strong>Missing data:</strong> {assessment.missingData.join(', ')}.
+            Provide complete CBC values for a more accurate screening result.
+          </div>
+        </div>
+      )}
+
+      {/* Disclaimer */}
+      <div style={{ padding: '16px 20px', background: '#EBF5FB', borderRadius: 12, fontSize: 13, color: '#1A5276', border: '1px solid #A9CCE3', marginBottom: 24 }}>
+        <strong>Important Disclaimer:</strong> This is a <strong>preliminary clinical rule-based screening</strong> using WHO 2011 haemoglobin thresholds.
+        It is NOT a medical diagnosis. Always consult a qualified healthcare professional for diagnosis and treatment.
+        Assessment date: {new Date(assessment.createdAt).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' })}.
+      </div>
+
+      {/* Actions */}
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+        <button className="btn-sm btn-sm-primary" style={{ padding: '12px 24px', fontSize: 14 }} onClick={handleDownload} disabled={downloading}>
+          <Download size={16} />
+          {downloading ? 'Generating PDF...' : 'Download PDF Report'}
+        </button>
+        <button className="btn-sm btn-sm-outline" style={{ padding: '12px 24px', fontSize: 14 }} onClick={() => navigate('/cbc-analysis')}>
+          New Screening
+        </button>
+        <button className="btn-sm btn-sm-teal" style={{ padding: '12px 24px', fontSize: 14 }} onClick={() => navigate('/reports')}>
+          View All Reports
+        </button>
+        <button style={{ padding: '12px 20px', background: 'none', border: '2px solid #E5D4CE', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, fontWeight: 600 }} onClick={() => navigate('/dashboard')}>
+          <ChevronLeft size={16} /> Dashboard
+        </button>
+      </div>
     </PageLayout>
   );
-}
-
-function ScanValue({ label, value, unit = "" }) {
-  return <div className="cbc-result-item"><strong>{label}</strong><span>{value || "Not detected"} <small>{unit}</small></span></div>;
 }
 
 export default AIAnalysis;

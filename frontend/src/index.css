@@ -2,9 +2,20 @@ html,
 body,
 #root {
   margin: 0;
+  padding: 0;
+  width: 100%;
   min-height: 100%;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
+  -webkit-font-smoothing: antialiased;
 }

@@ -1,36 +1,165 @@
-import { useNavigate } from "react-router-dom";
-import PageLayout from "./PageLayout";
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { FileText, Download, Droplet, Activity, AlertCircle } from 'lucide-react';
+import PageLayout from './PageLayout';
+import api from '../api/client';
+
+const CATEGORY_LABEL = {
+  no_anemia: 'No Anemia',
+  mild_anemia: 'Mild Anemia',
+  moderate_anemia: 'Moderate Anemia',
+  severe_anemia: 'Severe Anemia',
+  insufficient_data: 'Insufficient Data',
+};
+
+const DOT_CLASS = {
+  no_anemia: 'dot-green',
+  mild_anemia: 'dot-yellow',
+  moderate_anemia: 'dot-orange',
+  severe_anemia: 'dot-red',
+  insufficient_data: 'dot-gray',
+};
 
 function Reports() {
   const navigate = useNavigate();
-  const profile = JSON.parse(localStorage.getItem("momucooProfile") || JSON.stringify({ name: "Patient" }));
-  const pregnancy = JSON.parse(localStorage.getItem("pregnancyData") || "null");
-  const cbc = JSON.parse(localStorage.getItem("cbcData") || "null");
-  const scan = JSON.parse(localStorage.getItem("scanData") || "null");
-  const ai = JSON.parse(localStorage.getItem("aiResult") || "null");
-  const generated = new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  const [assessments, setAssessments] = useState([]);
+  const [reports, setReports] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [downloading, setDownloading] = useState(null);
 
-  return <PageLayout title="Overall Patient Report" eyebrow="DIGITAL CHECKUP SUMMARY" activePath="/reports" description="Your complete online checkup summary, ready to review or print.">
-    <div className="report-actions"><button className="secondary-btn" onClick={() => window.print()}>🖨 Print Report</button><button className="primary-btn" onClick={() => navigate("/health-check")}>＋ Start New Checkup</button></div>
-    <article className="hospital-report">
-      <header className="report-header"><div><p className="report-brand">MOMUCOO <span>• DIGITAL MATERNITY CARE</span></p><h2>Patient Checkup Report</h2><p>Early pregnancy anemia screening summary</p></div><div className="report-meta"><span>REPORT DATE</span><strong>{generated}</strong><small>Online checkup record</small></div></header>
-      <section className="report-patient"><div><span>Patient name</span><strong>{profile.name}</strong></div><div><span>Pregnancy week</span><strong>{pregnancy?.week || "Not entered"}</strong></div><div><span>Report status</span><strong className={ai ? "report-green" : "report-orange"}>{ai ? "Analysis complete" : "In progress"}</strong></div></section>
-      <ReportSection title="01 • Health Check & Symptoms"><div className="report-grid"><ReportValue label="Chat check completed" value={pregnancy ? "Yes" : "Not completed"} /><ReportValue label="Symptoms reported" value={pregnancy?.symptoms?.length ? pregnancy.symptoms.join(", ") : "None recorded"} /><ReportValue label="Pregnancy stage" value={pregnancy?.week ? `Week ${pregnancy.week} of pregnancy` : "Not entered"} /></div></ReportSection>
-      <ReportSection title="02 • CBC Blood Report"><div className="report-grid cbc-report-grid"><ReportValue label="Hemoglobin" value={cbc?.hb ? `${cbc.hb} g/dL` : "Not submitted"} /><ReportValue label="RBC" value={cbc?.rbc || "Not submitted"} /><ReportValue label="MCV" value={cbc?.mcv ? `${cbc.mcv} fL` : "Not submitted"} /><ReportValue label="MCH" value={cbc?.mch ? `${cbc.mch} pg` : "Not submitted"} /><ReportValue label="MCHC" value={cbc?.mchc || "Not submitted"} /><ReportValue label="Hematocrit" value={cbc?.hematocrit ? `${cbc.hematocrit}%` : "Not submitted"} /><ReportValue label="RDW" value={cbc?.rdw ? `${cbc.rdw}%` : "Not submitted"} /></div></ReportSection>
-      <ReportSection title="03 • Pregnancy Scan Report"><div className={`scan-summary ${scan?.uploaded ? "uploaded" : "optional"}`}><span>{scan?.uploaded ? "🖥️" : "📎"}</span><div><strong>{scan?.uploaded ? scan.name : "No scan report uploaded"}</strong><p>{scan?.uploaded ? "Scan report attached for clinical review." : "Optional: upload an ultrasound or pregnancy scan when available."}</p></div><em>{scan?.uploaded ? "Available" : "Optional"}</em></div></ReportSection>
-      <ReportSection title="04 • AI Anemia Analysis"><div className="ai-report-summary"><div className="mini-score"><strong>{ai?.score ?? "--"}</strong><span>/100</span></div><div><span>PRELIMINARY SCREENING RESULT</span><h3>{ai?.risk ? `${ai.risk} Risk` : "Analysis pending"}</h3><p>{ai ? "This result combines the available symptoms and CBC information. It is not a medical diagnosis." : "Complete the CBC report to generate an AI screening result."}</p></div></div></ReportSection>
-      <section className="report-disclaimer"><strong>Clinical note</strong><p>This online summary supports early pregnancy health monitoring. Please share it with your prenatal care provider. Seek emergency help for severe breathlessness, fainting, chest pain, or heavy bleeding.</p></section>
-      <footer className="report-footer">Generated by Momucoo • Keep this report with your maternity records</footer>
-    </article>
-  </PageLayout>;
-}
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [aRes, rRes] = await Promise.all([api.get('/assessments'), api.get('/reports')]);
+        setAssessments(aRes.assessments || []);
+        setReports(rRes.reports || []);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
 
-function ReportSection({ title, children }) {
-  return <section className="report-section"><h3>{title}</h3>{children}</section>;
-}
+  const downloadPDF = async (assessmentId) => {
+    setDownloading(assessmentId);
+    try {
+      const token = sessionStorage.getItem('anemiaai_token');
+      const res = await fetch(`/api/download/assessment/${assessmentId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Download failed');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `anemiaai-report-${assessmentId}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Download error: ' + err.message);
+    } finally {
+      setDownloading(null);
+    }
+  };
 
-function ReportValue({ label, value }) {
-  return <div className="report-value"><span>{label}</span><strong>{value}</strong></div>;
+  return (
+    <PageLayout title="Reports & History" activePath="/reports" description="All your CBC reports and screening assessments">
+      {loading ? (
+        <div className="loading-center"><div className="spinner" /><p>Loading reports...</p></div>
+      ) : (
+        <>
+          {error && <div className="alert alert-error" style={{ marginBottom: 20 }}><AlertCircle size={16} />{error}</div>}
+
+          {/* Screening assessments */}
+          <div className="section-card" style={{ marginBottom: 24 }}>
+            <div className="section-header">
+              <h2 style={{ fontSize: 18 }}><Activity size={20} /> Screening Assessments</h2>
+              <button className="btn-sm btn-sm-primary" onClick={() => navigate('/cbc-analysis')}>+ New Screening</button>
+            </div>
+
+            {assessments.length === 0 ? (
+              <div className="empty-state">
+                <Activity size={44} />
+                <p>No screenings yet. Upload a CBC report to get started.</p>
+                <button className="btn-sm btn-sm-primary" style={{ marginTop: 12 }} onClick={() => navigate('/cbc-analysis')}>Start Screening</button>
+              </div>
+            ) : (
+              <div className="report-list">
+                {assessments.map(a => (
+                  <div key={a._id} className="report-item">
+                    <div className="report-item-left">
+                      <div className={`report-dot ${DOT_CLASS[a.screeningCategory] || 'dot-gray'}`} />
+                      <div>
+                        <strong>{CATEGORY_LABEL[a.screeningCategory] || 'Unknown'}</strong>
+                        <small>
+                          {a.hbValue ? `Hb: ${a.hbValue} g/dL • ` : ''}
+                          {new Date(a.createdAt).toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' })}
+                          {a.pregnancyWeek ? ` • Week ${a.pregnancyWeek}` : ''}
+                        </small>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button className="btn-sm btn-sm-outline" onClick={() => navigate(`/ai-analysis/${a._id}`)}>View</button>
+                      <button className="btn-sm btn-sm-primary" onClick={() => downloadPDF(a._id)} disabled={downloading === a._id}>
+                        <Download size={13} />
+                        {downloading === a._id ? '...' : 'PDF'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Blood Reports */}
+          <div className="section-card">
+            <div className="section-header">
+              <h2 style={{ fontSize: 18 }}><Droplet size={20} /> CBC Blood Reports</h2>
+            </div>
+
+            {reports.length === 0 ? (
+              <div className="empty-state">
+                <FileText size={44} />
+                <p>No CBC reports uploaded yet.</p>
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table className="patient-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Hb (g/dL)</th>
+                      <th>RBC</th>
+                      <th>MCV</th>
+                      <th>Hematocrit</th>
+                      <th>Ferritin</th>
+                      <th>Source</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reports.map(r => (
+                      <tr key={r._id}>
+                        <td>{new Date(r.reportDate || r.createdAt).toLocaleDateString('en-IN')}</td>
+                        <td><strong style={{ color: r.hb < 7 ? '#C0392B' : r.hb < 11 ? '#E67E22' : '#27AE60' }}>{r.hb ?? '—'}</strong></td>
+                        <td>{r.rbc ?? '—'}</td>
+                        <td>{r.mcv ?? '—'}</td>
+                        <td>{r.hematocrit ?? '—'}</td>
+                        <td>{r.ferritin ?? '—'}</td>
+                        <td>{r.ocrExtracted ? (r.ocrConfirmed ? '✓ OCR (confirmed)' : 'OCR') : 'Manual'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </PageLayout>
+  );
 }
 
 export default Reports;

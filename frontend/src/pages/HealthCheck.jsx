@@ -1,70 +1,191 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import PageLayout from "./PageLayout";
+import { useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Activity, AlertTriangle, ChevronRight, ChevronLeft } from 'lucide-react';
+import PageLayout from './PageLayout';
+import api from '../api/client';
 
-const anemiaWords = ["tired", "fatigue", "weak", "dizzy", "breathless", "breath", "pale", "headache", "heartbeat", "palpitation"];
-const questions = [
-  "How are you feeling today? You can describe anything you have noticed in your own words.",
-  "Have you felt unusually tired, weak, dizzy, or short of breath recently?",
-  "How many weeks pregnant are you?",
-  "Have you been taking your prenatal vitamins or iron supplements?"
+const SYMPTOMS = [
+  { key: 'fatigue', label: 'Fatigue or Weakness', desc: 'Do you feel unusually tired, weak, or lacking energy?' },
+  { key: 'breathlessness', label: 'Shortness of Breath', desc: 'Do you feel breathless during normal activities like walking?' },
+  { key: 'dizziness', label: 'Dizziness or Lightheadedness', desc: 'Do you feel dizzy, lightheaded, or like you might faint?' },
+  { key: 'pale_skin', label: 'Pale Skin or Gums', desc: 'Have others noticed your skin, lips, or gums appear paler than usual?' },
+  { key: 'rapid_heartbeat', label: 'Rapid or Irregular Heartbeat', desc: 'Do you notice your heart beating faster or irregularly at rest?' },
+  { key: 'headache', label: 'Frequent Headaches', desc: 'Are you experiencing headaches more often than usual?' },
+  { key: 'cold_hands', label: 'Cold Hands or Feet', desc: 'Do your hands and feet feel cold even in warm weather?' },
+  { key: 'chest_pain', label: 'Chest Pain', desc: 'Do you have any chest pain or tightness? (Emergency symptom)' },
 ];
+
+const EMERGENCY_KEYS = ['chest_pain', 'breathlessness'];
 
 function HealthCheck() {
   const navigate = useNavigate();
-  const [profile, setProfile] = useState(() => JSON.parse(localStorage.getItem("momucooProfile") || JSON.stringify({ name: "there" })));
-  const [messages, setMessages] = useState(() => [{ from: "bot", text: `Hi ${profile.name}, I’m Momucoo. I’m here to listen and help you understand your early-pregnancy symptoms.` }, { from: "bot", text: questions[0] }]);
-  const [input, setInput] = useState("");
-  const [step, setStep] = useState(0);
-  const [symptoms, setSymptoms] = useState([]);
-  const [week, setWeek] = useState("");
-  const [finished, setFinished] = useState(false);
+  const location = useLocation();
+  const reportId = location.state?.reportId || null;
 
-  useEffect(() => {
-    const updateProfile = () => setProfile(JSON.parse(localStorage.getItem("momucooProfile") || JSON.stringify({ name: "there" })));
-    window.addEventListener("momucoo-profile-updated", updateProfile);
-    return () => window.removeEventListener("momucoo-profile-updated", updateProfile);
-  }, []);
+  const [answers, setAnswers] = useState({});
+  const [pregnancyWeek, setPregnancyWeek] = useState('');
+  const [step, setStep] = useState(0); // 0 = intro, 1..N = symptoms, N+1 = pw, N+2 = submitting
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
-  const addMessage = (from, text) => setMessages((current) => [...current, { from, text }]);
-  const send = (value = input) => {
-    const answer = value.trim();
-    if (!answer || finished) return;
-    addMessage("user", answer);
-    setInput("");
+  const totalSteps = SYMPTOMS.length + 1; // symptoms + pregnancy week
+  const isIntro = step === 0;
+  const isPregnancyWeek = step === SYMPTOMS.length + 1;
+  const symptomIndex = step - 1; // which symptom (0-based)
+  const currentSymptom = !isIntro && !isPregnancyWeek ? SYMPTOMS[symptomIndex] : null;
 
-    if (step === 0) {
-      const found = anemiaWords.filter((word) => answer.toLowerCase().includes(word));
-      setSymptoms(found);
-      addMessage("bot", found.length ? `Thank you for sharing that. I noticed ${found.length > 1 ? "a few symptoms" : "a symptom"} that can sometimes be linked with low iron or anemia. I’ll ask two quick questions to understand better.` : "Thank you for sharing that. Every detail helps, and I’ll ask a couple of gentle questions next.");
-    } else if (step === 1) {
-      const positive = /yes|often|sometimes|frequently|a lot/i.test(answer);
-      if (positive) setSymptoms((current) => [...new Set([...current, "tired or dizzy"])]);
-      addMessage("bot", "Got it. Knowing your pregnancy stage will help us read your blood results more carefully.");
-    } else if (step === 2) {
-      setWeek(answer);
-      addMessage("bot", "Thanks. One last question: " + questions[3]);
-    } else {
-      const positive = /yes|taking|regular/i.test(answer);
-      addMessage("bot", positive ? "That’s good to know. Please continue only as advised by your prenatal care provider." : "Thanks for telling me. Please discuss supplements with your prenatal care provider before starting or changing them.");
-      localStorage.setItem("pregnancyData", JSON.stringify({ week: Number.parseInt(week, 10) || null, symptoms, chatTranscript: [...messages, { from: "user", text: answer }], createdAt: new Date().toISOString() }));
-      setFinished(true);
-      return;
-    }
-    const nextStep = step + 1;
-    setStep(nextStep);
-    if (nextStep === 1) addMessage("bot", questions[1]);
-    if (nextStep === 2) addMessage("bot", questions[2]);
+  const hasEmergency = EMERGENCY_KEYS.some(k => answers[k] === 'yes');
+
+  const progress = step === 0 ? 0 : Math.round((step / (totalSteps + 1)) * 100);
+
+  const handleAnswer = (key, value) => {
+    setAnswers(a => ({ ...a, [key]: value }));
   };
 
-  return <PageLayout title="Health Check" eyebrow="MOMUCOO AI CHAT" activePath="/health-check" description="Talk naturally about how you feel. Momucoo will ask friendly anemia-related questions before your report review.">
-    <section className="chat-card full-chat-card">
-      <div className="chat-intro"><div className="chat-avatar">M</div><div><strong>Momucoo AI</strong><span>Friendly pregnancy health assistant • Online</span></div></div>
-      <div className="chat-history">{messages.map((message, index) => <div className={`chat-bubble ${message.from}`} key={`${message.from}-${index}`}>{message.text}</div>)}{finished && <div className="chat-bubble bot"><strong>Preliminary insight</strong><br />Your symptoms have been recorded. Symptoms alone cannot diagnose anemia, so let’s combine them with your CBC values and optional scan report.</div>}</div>
-      {!finished ? <><div className="chat-composer"><input className="chat-input" value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && send()} placeholder="Type how you feel..." /><button className="send-chat" onClick={() => send()} aria-label="Send message">➤</button></div><div className="quick-replies">{step === 1 && ["Yes, quite often", "Sometimes", "No, not really"].map((reply) => <button key={reply} onClick={() => send(reply)}>{reply}</button>)}{step === 3 && ["Yes, regularly", "Sometimes", "Not currently"].map((reply) => <button key={reply} onClick={() => send(reply)}>{reply}</button>)}</div></> : <button className="primary-btn chat-next" onClick={() => navigate("/cbc-analysis")}>Continue to Blood & Scan Reports →</button>}
-      <div className="chat-safety">Momucoo offers screening support, not a diagnosis. For severe symptoms, use Emergency Help.</div>
-    </section>
-  </PageLayout>;
+  const handleNext = () => {
+    if (currentSymptom && !answers[currentSymptom.key]) { setError('Please select an answer.'); return; }
+    setError('');
+    setStep(s => s + 1);
+  };
+
+  const handleSubmit = async () => {
+    setError('');
+    setSubmitting(true);
+    try {
+      const symptoms = SYMPTOMS.map(s => ({ symptom: s.key, answer: answers[s.key] || 'unknown' }));
+      const body = { symptoms, pregnancyWeek: pregnancyWeek ? parseInt(pregnancyWeek) : undefined };
+      if (reportId) body.bloodReportId = reportId;
+      const data = await api.post('/assessments', body);
+      navigate(`/ai-analysis/${data.assessment._id}`);
+    } catch (err) {
+      setError(err.message || 'Failed to submit assessment.');
+      setSubmitting(false);
+    }
+  };
+
+  const optionClass = (key, val) => {
+    if (answers[key] !== val) return 'symptom-option';
+    if (val === 'yes') return 'symptom-option selected-yes';
+    if (val === 'no') return 'symptom-option selected-no';
+    return 'symptom-option selected-unknown';
+  };
+
+  return (
+    <PageLayout title="Symptom Assessment" activePath="/health-check" description="Answer questions about your symptoms for a complete screening">
+      {/* Progress */}
+      {!isIntro && (
+        <div className="symptom-progress" style={{ marginBottom: 28 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 13, color: '#6B7280' }}>
+            <span>Step {step} of {totalSteps}</span>
+            <span>{progress}% complete</span>
+          </div>
+          <div className="progress-bar">
+            <div className="progress-fill" style={{ width: `${progress}%` }} />
+          </div>
+        </div>
+      )}
+
+      {/* Emergency alert */}
+      {hasEmergency && (
+        <div className="alert alert-error" style={{ marginBottom: 20 }}>
+          <AlertTriangle size={16} />
+          <strong>Emergency symptoms reported.</strong> Please seek immediate medical attention. Do not rely on this tool alone.
+        </div>
+      )}
+
+      {/* Intro */}
+      {isIntro && (
+        <div className="section-card" style={{ maxWidth: 600 }}>
+          <div style={{ textAlign: 'center', marginBottom: 28 }}>
+            <div style={{ width: 72, height: 72, background: '#FDE8E6', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', color: '#C0392B' }}>
+              <Activity size={32} />
+            </div>
+            <h2 style={{ fontSize: 22, marginBottom: 8 }}>Symptom Assessment</h2>
+            <p style={{ color: '#6B7280', lineHeight: 1.6 }}>
+              Answer {SYMPTOMS.length} short questions about your current symptoms.
+              This takes about 2–3 minutes and helps improve your anemia screening accuracy.
+            </p>
+          </div>
+
+          {!reportId && (
+            <div className="alert alert-warning" style={{ marginBottom: 20 }}>
+              <AlertTriangle size={16} />
+              You can complete symptoms without a CBC report. For a full screening, upload CBC values first.
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 12 }}>
+            <button className="btn-submit" onClick={() => setStep(1)}>
+              Start Assessment
+            </button>
+            <button onClick={() => navigate('/cbc-analysis')} style={{ padding: '12px 20px', background: 'none', border: '2px solid #E5D4CE', borderRadius: 10, cursor: 'pointer', fontSize: 15, fontWeight: 600 }}>
+              Upload CBC First
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Symptom question */}
+      {currentSymptom && (
+        <div className="section-card" style={{ maxWidth: 600 }}>
+          <div style={{ marginBottom: 24 }}>
+            <p style={{ fontSize: 13, color: '#9CA3AF', marginBottom: 8 }}>Question {step} of {SYMPTOMS.length}</p>
+            <h2 style={{ fontSize: 20, marginBottom: 8 }}>{currentSymptom.label}</h2>
+            <p style={{ color: '#6B7280', lineHeight: 1.6 }}>{currentSymptom.desc}</p>
+            {EMERGENCY_KEYS.includes(currentSymptom.key) && (
+              <div style={{ marginTop: 10, padding: '8px 12px', background: '#FDE8E6', borderRadius: 8, fontSize: 13, color: '#C0392B' }}>
+                <AlertTriangle size={14} style={{ display: 'inline', marginRight: 6 }} />
+                Emergency symptom — answer carefully
+              </div>
+            )}
+          </div>
+
+          <div className="symptom-options">
+            {[['yes', 'Yes'], ['no', 'No'], ['unknown', 'Not Sure']].map(([val, label]) => (
+              <button key={val} className={optionClass(currentSymptom.key, val)} onClick={() => handleAnswer(currentSymptom.key, val)}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {error && <p style={{ color: '#C0392B', fontSize: 13, marginTop: 10 }}>{error}</p>}
+
+          <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
+            <button onClick={() => { setStep(s => s - 1); setError(''); }} style={{ padding: '11px 20px', background: 'none', border: '2px solid #E5D4CE', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
+              <ChevronLeft size={16} /> Back
+            </button>
+            <button className="btn-submit" style={{ width: 'auto', padding: '11px 28px', display: 'flex', alignItems: 'center', gap: 8 }} onClick={handleNext} disabled={!answers[currentSymptom.key]}>
+              Next <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Pregnancy week */}
+      {isPregnancyWeek && (
+        <div className="section-card" style={{ maxWidth: 600 }}>
+          <h2 style={{ fontSize: 20, marginBottom: 8 }}>Pregnancy Week</h2>
+          <p style={{ color: '#6B7280', marginBottom: 20 }}>Enter your current pregnancy week (optional, but helps determine trimester).</p>
+
+          <div className="form-group" style={{ maxWidth: 240 }}>
+            <label>Week of Pregnancy (1–42)</label>
+            <input type="number" min="1" max="42" placeholder="e.g. 24" value={pregnancyWeek} onChange={e => setPregnancyWeek(e.target.value)} />
+          </div>
+
+          {error && <div className="alert alert-error"><AlertTriangle size={16} />{error}</div>}
+
+          <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
+            <button onClick={() => setStep(s => s - 1)} style={{ padding: '11px 20px', background: 'none', border: '2px solid #E5D4CE', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
+              <ChevronLeft size={16} /> Back
+            </button>
+            <button className="btn-submit" style={{ width: 'auto', padding: '11px 28px', display: 'flex', alignItems: 'center', gap: 8 }} onClick={handleSubmit} disabled={submitting}>
+              {submitting ? 'Analyzing...' : <><span>Get Screening Result</span><ChevronRight size={16} /></>}
+            </button>
+          </div>
+        </div>
+      )}
+    </PageLayout>
+  );
 }
 
 export default HealthCheck;
