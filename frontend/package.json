@@ -10,10 +10,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "lucide-react": "^1.73.0",
     "pdfjs-dist": "^6.4.299",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.3",
+    "recharts": "^3.10.1",
     "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
