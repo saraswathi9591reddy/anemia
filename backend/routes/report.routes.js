@@ -16,3 +16,4 @@ router.post('/', auth, requireRole('patient'), createReport);
 router.post('/upload', auth, requireRole('patient'), upload.single('report'), uploadFile);
 
 module.exports = router;
+

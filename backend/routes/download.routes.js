@@ -6,3 +6,4 @@ const { auth } = require('../middleware/auth');
 router.get('/assessment/:id', auth, downloadAssessmentPDF);
 
 module.exports = router;
+

@@ -27,3 +27,4 @@ const getPatientSummary = async (req, res) => {
 };
 
 module.exports = { getAllPatients, getPatientSummary };
+

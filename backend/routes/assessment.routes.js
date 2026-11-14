@@ -8,3 +8,4 @@ router.post('/', auth, requireRole('patient'), createAssessment);
 router.get('/:id', auth, requireRole('patient'), getAssessmentById);
 
 module.exports = router;
+

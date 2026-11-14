@@ -7,3 +7,4 @@ router.get('/profile', auth, requireRole('patient'), getProfile);
 router.put('/profile', auth, requireRole('patient'), updateProfile);
 
 module.exports = router;
+

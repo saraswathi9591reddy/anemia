@@ -45,3 +45,4 @@ Open `http://localhost:5173` in your browser.
 - **Severe Anemia**: Hb < 7.0 g/dL
 
 *Disclaimer: This is a preliminary clinical screening tool and does NOT replace professional medical diagnosis, laboratory testing, or physician consultation.*
+

@@ -63,3 +63,4 @@ mongoose.connect(MONGODB_URI)
       console.log(`📋 Health check: http://localhost:${PORT}/api/health`);
     });
   });
+

@@ -7,3 +7,4 @@ router.get('/patients', auth, requireRole('doctor'), getAllPatients);
 router.get('/patients/:patientId', auth, requireRole('doctor'), getPatientSummary);
 
 module.exports = router;
+

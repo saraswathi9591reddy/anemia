@@ -60,3 +60,4 @@ const getAssessmentById = async (req, res) => {
 };
 
 module.exports = { createAssessment, getAssessments, getAssessmentById };
+

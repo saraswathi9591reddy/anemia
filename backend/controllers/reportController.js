@@ -46,3 +46,4 @@ const uploadFile = async (req, res) => {
 };
 
 module.exports = { createReport, getReports, uploadFile };
+
