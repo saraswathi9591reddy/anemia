@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Download, AlertTriangle, CheckCircle, Activity, FileText, ChevronLeft, Info } from 'lucide-react';
+import { Download, AlertTriangle, CheckCircle, Activity, FileText, ChevronLeft, Info, Plus } from 'lucide-react';
 import PageLayout from './PageLayout';
 import api from '../api/client';
 
@@ -53,15 +53,14 @@ function AIAnalysis() {
   useEffect(() => {
     const load = async () => {
       try {
-        // If no ID, get the latest assessment
-        let data;
         if (id) {
-          data = await api.get(`/assessments/${id}`);
+          const data = await api.get(`/assessments/${id}`);
           setAssessment(data.assessment);
         } else {
-          data = await api.get('/assessments');
-          if (data.assessments?.length > 0) setAssessment(data.assessments[0]);
-          else setError('No assessments found. Complete a CBC analysis and symptom check first.');
+          const data = await api.get('/assessments');
+          if (data.assessments && data.assessments.length > 0) {
+            setAssessment(data.assessments[0]);
+          }
         }
       } catch (err) {
         setError(err.message || 'Could not load assessment.');
@@ -95,9 +94,55 @@ function AIAnalysis() {
     }
   };
 
-  if (loading) return <PageLayout title="Screening Result" activePath="/ai-analysis"><div className="loading-center"><div className="spinner" /><p>Loading result...</p></div></PageLayout>;
-  if (error) return <PageLayout title="Screening Result" activePath="/ai-analysis"><div className="alert alert-error"><AlertTriangle size={16} />{error}</div></PageLayout>;
-  if (!assessment) return null;
+  if (loading) {
+    return (
+      <PageLayout title="Screening Result" activePath="/ai-analysis">
+        <div className="loading-center">
+          <div className="spinner" />
+          <p>Loading result...</p>
+        </div>
+      </PageLayout>
+    );
+  }
+
+  // Friendly Empty State when the patient has not done any screening yet
+  if (!assessment) {
+    return (
+      <PageLayout
+        title="Screening Result"
+        activePath="/ai-analysis"
+        description="Clinical rule-based preliminary screening — WHO 2011 guidelines"
+      >
+        <div className="section-card" style={{ maxWidth: 640, margin: '20px auto', textAlign: 'center', padding: '48px 32px' }}>
+          <div style={{ width: 68, height: 68, borderRadius: '50%', background: '#FDE8E6', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', color: '#C0392B' }}>
+            <Activity size={32} />
+          </div>
+          <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 10, justifyContent: 'center' }}>No Screening Done Yet</h2>
+          <p style={{ color: '#6B7280', fontSize: 15, lineHeight: 1.6, marginBottom: 28 }}>
+            You haven't uploaded a blood report or completed a symptom check yet. 
+            Upload your Complete Blood Count (CBC) report or enter your values to generate your preliminary anemia screening.
+          </p>
+          <div style={{ display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button
+              className="btn-primary"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 28px', fontSize: 15 }}
+              onClick={() => navigate('/cbc-analysis')}
+            >
+              <Plus size={18} />
+              Start CBC Screening
+            </button>
+            <button
+              className="btn-outline"
+              style={{ padding: '12px 24px', fontSize: 15 }}
+              onClick={() => navigate('/health-check')}
+            >
+              Check Symptoms Only
+            </button>
+          </div>
+        </div>
+      </PageLayout>
+    );
+  }
 
   const config = CATEGORY_CONFIG[assessment.screeningCategory] || CATEGORY_CONFIG.insufficient_data;
   const Icon = config.icon;
@@ -108,6 +153,8 @@ function AIAnalysis() {
 
   return (
     <PageLayout title="Screening Result" activePath="/ai-analysis" description="Clinical rule-based preliminary screening — WHO 2011 guidelines">
+      {error && <div className="alert alert-error" style={{ marginBottom: 20 }}><AlertTriangle size={16} />{error}</div>}
+
       {assessment.emergencyFlag && (
         <div className="alert alert-error" style={{ marginBottom: 20 }}>
           <AlertTriangle size={18} />
