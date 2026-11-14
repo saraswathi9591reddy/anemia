@@ -155,19 +155,26 @@ function CBCAnalysis() {
   };
 
   const handleSave = async () => {
-    if (!values.hb) { setError('Haemoglobin (Hb) is required for anemia screening.'); return; }
+    // If user didn't enter Hb, prompt with a clear inline error
+    if (!values.hb || String(values.hb).trim() === '') {
+      setError('Please enter your Haemoglobin (Hb) value below before continuing.');
+      const hbInput = document.getElementById('cbc-field-hb');
+      if (hbInput) hbInput.focus();
+      return;
+    }
+
     setError('');
     setSaving(true);
     try {
       const body = {
-        ...Object.fromEntries(Object.entries(values).filter(([, v]) => v !== '')),
+        ...Object.fromEntries(Object.entries(values).filter(([, v]) => v !== '' && v !== null && v !== undefined)),
         reportDate,
         ocrExtracted: ocrStatus === 'done',
         ocrConfirmed,
         uploadedFileName: file?.name || '',
       };
       const data = await api.post('/reports', body);
-      const reportId = data.report._id;
+      const reportId = data.report?._id;
       navigate('/health-check', {
         state: {
           reportId,
@@ -175,7 +182,7 @@ function CBCAnalysis() {
         }
       });
     } catch (err) {
-      setError(err.message || 'Failed to save report.');
+      setError(err.message || 'Failed to save report. Please check your network and try again.');
     } finally {
       setSaving(false);
     }
@@ -293,25 +300,34 @@ function CBCAnalysis() {
             <div key={key} className="cbc-field">
               <label>{label}{required && <span style={{ color: '#C0392B' }}> *</span>}</label>
               <input
+                id={`cbc-field-${key}`}
                 type="number"
                 step="0.01"
                 placeholder={placeholder}
                 value={values[key]}
-                onChange={e => setValues(v => ({ ...v, [key]: e.target.value }))}
+                onChange={e => {
+                  setError('');
+                  setValues(v => ({ ...v, [key]: e.target.value }));
+                }}
               />
               <small>{unit}</small>
             </div>
           ))}
         </div>
 
-        {error && <div className="alert alert-error" style={{ marginTop: 16 }}><AlertCircle size={16} />{error}</div>}
+        {error && (
+          <div className="alert alert-error" style={{ marginTop: 16 }}>
+            <AlertCircle size={16} />
+            {error}
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: 16, marginTop: 24, alignItems: 'center' }}>
           <button
             className="btn-submit"
             style={{ width: 'auto', padding: '12px 32px', display: 'flex', alignItems: 'center', gap: 8 }}
             onClick={handleSave}
-            disabled={saving || !values.hb}
+            disabled={saving}
           >
             {saving ? 'Saving...' : <><span>Continue to Symptom Check</span><ChevronRight size={16} /></>}
           </button>
