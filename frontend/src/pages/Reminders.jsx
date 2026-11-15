@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { 
   Bell, BellRing, CheckCircle2, Circle, Clock, Plus, Trash2, 
   Sparkles, Check, X, Volume2, ShieldCheck, PlayCircle, AlertCircle,
-  Droplets, Pill, Utensils, HeartPulse, Send
+  Timer, CalendarClock, Zap
 } from 'lucide-react';
 import PageLayout from './PageLayout';
 
@@ -19,46 +19,90 @@ function playChimeSound() {
 
     const now = ctx.currentTime;
 
-    // Chime Note 1
+    // Chime Note 1 (E5 -> A5)
     const osc1 = ctx.createOscillator();
     const gain1 = ctx.createGain();
     osc1.type = 'sine';
-    osc1.frequency.setValueAtTime(659.25, now); // E5
-    osc1.frequency.exponentialRampToValueAtTime(880, now + 0.1); // A5
-    gain1.gain.setValueAtTime(0.5, now);
+    osc1.frequency.setValueAtTime(659.25, now);
+    osc1.frequency.exponentialRampToValueAtTime(880, now + 0.1);
+    gain1.gain.setValueAtTime(0.6, now);
     gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
     osc1.connect(gain1);
     gain1.connect(ctx.destination);
     osc1.start(now);
     osc1.stop(now + 0.5);
 
-    // Chime Note 2 (High bell harmonic)
+    // Chime Note 2 (E6 bell harmonic)
     const osc2 = ctx.createOscillator();
     const gain2 = ctx.createGain();
     osc2.type = 'triangle';
-    osc2.frequency.setValueAtTime(1318.5, now + 0.08); // E6
-    gain2.gain.setValueAtTime(0.35, now + 0.08);
-    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+    osc2.frequency.setValueAtTime(1318.5, now + 0.08);
+    gain2.gain.setValueAtTime(0.4, now + 0.08);
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.9);
     osc2.connect(gain2);
     gain2.connect(ctx.destination);
     osc2.start(now + 0.08);
-    osc2.stop(now + 0.8);
+    osc2.stop(now + 0.9);
   } catch (err) {
     console.warn('Audio play note:', err);
   }
 }
 
+// Convert any time string ('10:45 PM', '10:45 AM', '22:45', '10.45') to standard 'HH:MM' 24-hour format
+function parseTimeTo24h(timeStr) {
+  if (!timeStr) return null;
+  const cleaned = timeStr.trim().replace('.', ':');
+  
+  // Format 'HH:MM' (24-hour from <input type="time">)
+  const match24 = cleaned.match(/^(\d{1,2}):(\d{2})$/);
+  if (match24) {
+    const h = parseInt(match24[1], 10);
+    const m = match24[2];
+    return `${String(h).padStart(2, '0')}:${m}`;
+  }
+
+  // Format 'HH:MM AM/PM'
+  const match12 = cleaned.match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/i);
+  if (match12) {
+    let h = parseInt(match12[1], 10);
+    const m = match12[2];
+    const isPm = match12[3].toLowerCase() === 'pm';
+    if (isPm && h < 12) h += 12;
+    if (!isPm && h === 12) h = 0;
+    return `${String(h).padStart(2, '0')}:${m}`;
+  }
+
+  return null;
+}
+
+// Helper to format 24h 'HH:MM' to friendly '10:45 PM'
+function format12Hour(time24) {
+  if (!time24) return '';
+  const parts = time24.split(':');
+  if (parts.length < 2) return time24;
+  let h = parseInt(parts[0], 10);
+  const m = parts[1];
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12;
+  h = h ? h : 12;
+  return `${h}:${m} ${ampm}`;
+}
+
 const INITIAL_REMINDERS = [
-  { id: 1, text: '💧 Time to drink 1 glass of fresh water (Hydration)', time: '10:00 AM', category: 'Hydration', done: true },
-  { id: 2, text: '💊 Take prescribed iron tablet with orange juice', time: '01:00 PM', category: 'Medication', done: false },
-  { id: 3, text: '🥗 Healthy snack: Pumpkin seeds or dried apricots', time: '04:30 PM', category: 'Diet', done: false },
-  { id: 4, text: '🩺 Check fetal kicks and take a light prenatal walk', time: '07:00 PM', category: 'Activity', done: false },
+  { id: 1, text: '💧 Drink 1 glass of water (Hydration)', time: '10:00', done: true, lastFired: null },
+  { id: 2, text: '💊 Take prescribed iron tablet with vitamin C', time: '13:00', done: false, lastFired: null },
+  { id: 3, text: '🥗 Healthy iron snack (Pumpkin seeds & apricots)', time: '16:30', done: false, lastFired: null },
+  { id: 4, text: '🩺 Check prenatal vitamins & hydration walk', time: '19:00', done: false, lastFired: null },
 ];
 
 function Reminders() {
-  const [reminders, setReminders] = useState(INITIAL_REMINDERS);
+  const [reminders, setReminders] = useState(() => {
+    const saved = localStorage.getItem('anemiaai_reminders');
+    return saved ? JSON.parse(saved) : INITIAL_REMINDERS;
+  });
   const [newText, setNewText] = useState('');
   const [newTime, setNewTime] = useState('');
+  const [currentTime, setCurrentTime] = useState(new Date());
   const [permissionStatus, setPermissionStatus] = useState(
     typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default'
   );
@@ -66,6 +110,11 @@ function Reminders() {
   // Instagram / Mobile Push style banner notification state
   const [pushBanner, setPushBanner] = useState(null);
   const swRegRef = useRef(null);
+
+  // Save reminders locally
+  useEffect(() => {
+    localStorage.setItem('anemiaai_reminders', JSON.stringify(reminders));
+  }, [reminders]);
 
   // Register Service Worker for true Windows background push
   useEffect(() => {
@@ -85,7 +134,7 @@ function Reminders() {
     // 1. Play crystal bell chime sound
     playChimeSound();
 
-    // 2. Hardware vibration (if on mobile or supported laptop)
+    // 2. Hardware vibration
     if ('vibrate' in navigator) {
       try {
         navigator.vibrate([200, 100, 200]);
@@ -101,39 +150,78 @@ function Reminders() {
     });
 
     // 4. Send true OS Desktop Notification
-    if ('Notification' in window) {
-      if (Notification.permission === 'granted') {
-        try {
-          if (swRegRef.current && swRegRef.current.showNotification) {
-            await swRegRef.current.showNotification(title, {
-              body,
-              icon: '/logo.png',
-              badge: '/logo.png',
-              tag: 'reminder-' + Date.now(),
-              requireInteraction: true,
-              vibrate: [200, 100, 200]
-            });
-          } else {
-            const notif = new Notification(title, {
-              body,
-              icon: '/logo.png',
-              requireInteraction: true
-            });
-            notif.onclick = () => {
-              window.focus();
-              notif.close();
-            };
-          }
-        } catch (e) {
-          console.warn('System notification delivery:', e);
+    if ('Notification' in window && Notification.permission === 'granted') {
+      try {
+        if (swRegRef.current && swRegRef.current.showNotification) {
+          await swRegRef.current.showNotification(title, {
+            body,
+            icon: '/logo.png',
+            badge: '/logo.png',
+            tag: 'reminder-' + Date.now(),
+            requireInteraction: true,
+            vibrate: [200, 100, 200]
+          });
+        } else {
+          const notif = new Notification(title, {
+            body,
+            icon: '/logo.png',
+            requireInteraction: true
+          });
+          notif.onclick = () => {
+            window.focus();
+            notif.close();
+          };
         }
+      } catch (e) {
+        console.warn('System notification delivery:', e);
       }
     }
   };
 
+  // =========================================================================
+  // REAL-TIME CLOCK TICKER: CHECKS EXACT CURRENT TIME EVERY 1 SECOND!
+  // =========================================================================
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = new Date();
+      setCurrentTime(now);
+
+      const currentH = String(now.getHours()).padStart(2, '0');
+      const currentM = String(now.getMinutes()).padStart(2, '0');
+      const currentHHMM = `${currentH}:${currentM}`;
+      const todayDateStr = now.toISOString().split('T')[0];
+
+      setReminders(prevReminders => {
+        let changed = false;
+        const updated = prevReminders.map(item => {
+          const item24h = parseTimeTo24h(item.time);
+          const alreadyFiredToday = item.lastFired === `${todayDateStr} ${currentHHMM}`;
+
+          // If current clock EXACTLY matches reminder time and hasn't fired yet for this minute
+          if (item24h === currentHHMM && !alreadyFiredToday) {
+            changed = true;
+            triggerPushNotification(
+              `⏰ Time Alert (${format12Hour(item24h)})`,
+              `Reminder: ${item.text}`
+            );
+            return {
+              ...item,
+              lastFired: `${todayDateStr} ${currentHHMM}`
+            };
+          }
+          return item;
+        });
+
+        return changed ? updated : prevReminders;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
   const requestPermissionAndSend = async () => {
     if (!('Notification' in window)) {
-      triggerPushNotification('AnemiaAI Reminder', '💧 Time to drink water! Keep your hydration on track.');
+      triggerPushNotification('AnemiaAI Reminder', '💧 Time to drink water! Stay hydrated.');
       return;
     }
 
@@ -143,11 +231,10 @@ function Reminders() {
 
       if (permission === 'granted') {
         triggerPushNotification(
-          '🔔 Notifications Activated!',
-          '💧 Time to drink water! You will now receive alerts for all your daily care tasks.'
+          '🔔 Notifications Active!',
+          'Exact time alerts enabled! When your reminder time arrives, an alert will fire automatically.'
         );
       } else {
-        // Fallback: In-app Instagram-style banner always fires!
         triggerPushNotification(
           '💧 Drink Water Reminder',
           'Remember to drink 1 glass of water now to stay hydrated and support healthy blood circulation!'
@@ -158,14 +245,33 @@ function Reminders() {
     }
   };
 
+  // Quick Helper: Set a reminder for EXACTLY 1 minute from right now
+  const setQuickReminderForNextMinute = () => {
+    const nextMin = new Date(Date.now() + 65 * 1000); // 1 minute in future
+    const h = String(nextMin.getHours()).padStart(2, '0');
+    const m = String(nextMin.getMinutes()).padStart(2, '0');
+    const time24 = `${h}:${m}`;
+    const friendly = format12Hour(time24);
+
+    const item = {
+      id: Date.now(),
+      text: '💧 Time to drink 1 glass of water!',
+      time: time24,
+      done: true,
+      lastFired: null
+    };
+
+    setReminders(prev => [item, ...prev]);
+    triggerPushNotification(
+      '⏳ Timer Scheduled!',
+      `Reminder set for ${friendly} (in ~1 minute). Keep this tab open to watch the alert ring!`
+    );
+  };
+
   const toggle = (id) => {
     setReminders(items => items.map(item => {
       if (item.id === id) {
-        const nextState = !item.done;
-        if (nextState) {
-          triggerPushNotification('✅ Reminder Completed & Scheduled', item.text);
-        }
-        return { ...item, done: nextState };
+        return { ...item, done: !item.done };
       }
       return item;
     }));
@@ -176,35 +282,52 @@ function Reminders() {
     const item = reminders.find(r => r.id === id);
     setReminders(items => items.filter(item => item.id !== id));
     if (item) {
-      triggerPushNotification('🗑️ Task Removed', `"${item.text}" removed from your schedule.`);
+      triggerPushNotification('🗑️ Task Removed', `"${item.text}" was removed.`);
     }
   };
 
   const addReminder = (e) => {
     e.preventDefault();
-    if (!newText.trim()) return;
-    const reminderTime = newTime.trim() || 'Daily';
+    if (!newText.trim() || !newTime.trim()) {
+      triggerPushNotification('Please Enter Time', 'Select an exact time (e.g. 10:45) for your reminder.');
+      return;
+    }
+
+    const time24 = parseTimeTo24h(newTime) || newTime.trim();
+    const friendlyTime = format12Hour(time24);
+
     const item = {
       id: Date.now(),
       text: newText.trim(),
-      time: reminderTime,
-      category: 'Care',
-      done: true
+      time: time24,
+      done: true,
+      lastFired: null
     };
+
     setReminders(prev => [item, ...prev]);
-    triggerPushNotification('🔔 New Care Alert Added', `"${item.text}" scheduled for ${reminderTime}.`);
+    triggerPushNotification(
+      '⏰ Exact Reminder Set!',
+      `"${item.text}" scheduled for ${friendlyTime}. It will ring at that exact minute!`
+    );
     setNewText('');
     setNewTime('');
   };
+
+  const formattedLiveClock = currentTime.toLocaleTimeString([], { 
+    hour: '2-digit', 
+    minute: '2-digit', 
+    second: '2-digit', 
+    hour12: true 
+  });
 
   return (
     <PageLayout 
       title="Daily Care Reminders" 
       activePath="/reminders" 
-      description="Live push notifications for hydration, iron supplements, and pregnancy health."
+      description="Exact-time alarm and push notifications for hydration, medications, and prenatal care."
     >
       {/* ========================================================================= */}
-      {/* INSTAGRAM / MOBILE STYLE PUSH NOTIFICATION DROPDOWN BANNER (TOP OF SCREEN) */}
+      {/* INSTAGRAM / MOBILE STYLE PUSH NOTIFICATION DROPDOWN BANNER */}
       {/* ========================================================================= */}
       {pushBanner && (
         <div style={{
@@ -248,7 +371,7 @@ function Reminders() {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
               <span style={{ fontSize: 12, fontWeight: 700, color: '#C0392B', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
-                AnemiaAI • Reminder
+                AnemiaAI • Live Alert
               </span>
               <span style={{ fontSize: 11, color: '#9CA3AF' }}>{pushBanner.time}</span>
             </div>
@@ -260,7 +383,6 @@ function Reminders() {
             </div>
           </div>
 
-          {/* Close button */}
           <button
             onClick={(e) => { e.stopPropagation(); setPushBanner(null); }}
             style={{
@@ -282,12 +404,12 @@ function Reminders() {
         </div>
       )}
 
-      {/* Hero Notification Trigger Box */}
+      {/* Live System Clock Banner */}
       <div style={{
         background: 'linear-gradient(135deg, #FFF5F2 0%, #FFF9F6 100%)',
         border: '1.5px solid #F5D5CB',
         borderRadius: 16,
-        padding: '24px 28px',
+        padding: '20px 24px',
         marginBottom: 24,
         display: 'flex',
         alignItems: 'center',
@@ -296,88 +418,118 @@ function Reminders() {
         gap: 16,
         boxShadow: '0 4px 16px rgba(192, 57, 43, 0.06)'
       }}>
-        <div style={{ maxWidth: 560 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#C0392B', fontWeight: 700, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 6 }}>
-            <Sparkles size={16} />
-            Instant Care Push Alerts
-          </div>
-          <h2 style={{ fontSize: 20, fontWeight: 700, color: '#1F2937', margin: '0 0 6px 0' }}>
-            Instant Notification Center (Instagram Style)
-          </h2>
-          <p style={{ fontSize: 13, color: '#4B5563', margin: 0, lineHeight: 1.5 }}>
-            Click the button below to test a live notification alert with sound and top push banner!
-          </p>
-        </div>
-
-        {/* Big Clickable Action Button */}
-        <button
-          type="button"
-          onClick={requestPermissionAndSend}
-          className="btn-submit"
-          style={{
-            width: 'auto',
-            padding: '14px 26px',
-            background: '#C0392B',
-            color: '#FFFFFF',
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{
+            width: 48,
+            height: 48,
             borderRadius: 12,
-            fontSize: 15,
-            fontWeight: 700,
+            background: '#FDEDEC',
             display: 'flex',
             alignItems: 'center',
-            gap: 10,
-            cursor: 'pointer',
-            boxShadow: '0 6px 18px rgba(192, 57, 43, 0.28)',
-            border: 'none'
-          }}
-        >
-          <BellRing size={20} />
-          <span>Send "Drink Water" Notification Now!</span>
-        </button>
-      </div>
-
-      {/* Permission Status Indicator */}
-      {permissionStatus === 'denied' && (
-        <div className="alert alert-error" style={{ marginBottom: 20 }}>
-          <AlertCircle size={18} />
+            justifyContent: 'center'
+          }}>
+            <CalendarClock size={24} color="#C0392B" />
+          </div>
           <div>
-            <strong>Desktop Notifications Blocked in Chrome/Edge:</strong> In your browser address bar next to <code>localhost:5173</code>, click the <strong>🔒 Lock icon</strong>, set <strong>Notifications</strong> to <strong>Allow</strong>, and refresh the page.
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#C0392B', textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+              Current System Time (Live Clock)
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: '#1F2937', fontFamily: 'monospace' }}>
+              {formattedLiveClock}
+            </div>
+            <div style={{ fontSize: 12, color: '#6B7280' }}>
+              The scheduler checks your clock every second and triggers your alert at the exact minute set.
+            </div>
           </div>
         </div>
-      )}
 
-      {/* Add Reminder Card */}
+        {/* Quick Test 1-Minute Button */}
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={setQuickReminderForNextMinute}
+            className="btn-submit"
+            style={{
+              width: 'auto',
+              padding: '11px 20px',
+              background: '#C0392B',
+              color: '#FFFFFF',
+              borderRadius: 10,
+              fontSize: 13,
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              cursor: 'pointer',
+              border: 'none',
+              boxShadow: '0 4px 12px rgba(192, 57, 43, 0.25)'
+            }}
+          >
+            <Zap size={16} />
+            <span>Set Test Alert for Next Minute (in ~60s)</span>
+          </button>
+
+          {permissionStatus !== 'granted' && (
+            <button
+              type="button"
+              onClick={requestPermissionAndSend}
+              style={{
+                padding: '11px 18px',
+                background: '#FFFFFF',
+                border: '1.5px solid #C0392B',
+                color: '#C0392B',
+                borderRadius: 10,
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              Allow Desktop Push
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Add Reminder Card With Exact Time Picker */}
       <div className="section-card" style={{ marginBottom: 24, borderRadius: 14, padding: '22px 26px' }}>
         <h3 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 14px 0', display: 'flex', alignItems: 'center', gap: 8, color: '#1F2937' }}>
           <Plus size={18} color="#C0392B" />
-          Add Custom Care Reminder
+          Set Reminder for Specific Time (e.g. 10:45)
         </h3>
-        <form onSubmit={addReminder} style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        <form onSubmit={addReminder} style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
           <input
             type="text"
-            placeholder="e.g. Drink 1 glass of water with electrolytes"
+            placeholder="What should we remind you? (e.g. Drink 1 glass of water, Take Iron Tablet)"
             value={newText}
             onChange={e => setNewText(e.target.value)}
             style={{
-              flex: '1 1 280px',
+              flex: '1 1 300px',
               padding: '12px 16px',
               borderRadius: 8,
-              border: '1px solid #D1D5DB',
+              border: '1.5px solid #D1D5DB',
               fontSize: 14
             }}
           />
-          <input
-            type="text"
-            placeholder="Time (e.g. 11:30 AM)"
-            value={newTime}
-            onChange={e => setNewTime(e.target.value)}
-            style={{
-              width: 170,
-              padding: '12px 16px',
-              borderRadius: 8,
-              border: '1px solid #D1D5DB',
-              fontSize: 14
-            }}
-          />
+
+          {/* Native Exact Time Picker */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Clock size={16} color="#6B7280" />
+            <input
+              type="time"
+              value={newTime}
+              onChange={e => setNewTime(e.target.value)}
+              style={{
+                padding: '11px 14px',
+                borderRadius: 8,
+                border: '1.5px solid #D1D5DB',
+                fontSize: 15,
+                fontWeight: 600,
+                background: '#FFFFFF'
+              }}
+              required
+            />
+          </div>
+
           <button
             type="submit"
             className="btn-submit"
@@ -387,14 +539,18 @@ function Reminders() {
               borderRadius: 8,
               background: '#C0392B',
               color: '#FFFFFF',
-              fontWeight: 600,
+              fontWeight: 700,
               fontSize: 14,
-              cursor: 'pointer'
+              cursor: 'pointer',
+              border: 'none'
             }}
           >
-            Add & Notify
+            Save Exact Reminder
           </button>
         </form>
+        <p style={{ fontSize: 12, color: '#6B7280', marginTop: 8, marginBottom: 0 }}>
+          💡 Pick any time (e.g. <strong>10:45</strong>). As soon as the clock reaches that exact minute, the notification bell and drop-down banner will automatically sound and appear.
+        </p>
       </div>
 
       {/* Reminders List */}
@@ -403,10 +559,10 @@ function Reminders() {
           <div>
             <h3 style={{ fontSize: 17, fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 8, color: '#1F2937' }}>
               <Bell size={18} color="#C0392B" />
-              Scheduled Care Tasks
+              Active Timed Reminders
             </h3>
             <span style={{ fontSize: 13, color: '#6B7280' }}>
-              Click on any reminder to select it, or click "Send Notification" to trigger its alert right now.
+              Each reminder will ring automatically at its scheduled minute. Text has no strike-through.
             </span>
           </div>
 
@@ -423,129 +579,136 @@ function Reminders() {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {reminders.map((reminder) => (
-            <div
-              key={reminder.id}
-              onClick={() => toggle(reminder.id)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '16px 20px',
-                borderRadius: 12,
-                border: '1.5px solid',
-                borderColor: reminder.done ? '#22C55E' : '#E5E7EB',
-                background: reminder.done ? '#F0FDF4' : '#FFFFFF',
-                boxShadow: reminder.done ? '0 4px 12px rgba(34, 197, 94, 0.08)' : '0 2px 6px rgba(0,0,0,0.02)',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-                gap: 16
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                {reminder.done ? (
-                  <div style={{
-                    width: 26,
-                    height: 26,
-                    borderRadius: '50%',
-                    background: '#22C55E',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0
-                  }}>
-                    <Check size={16} color="#FFFFFF" strokeWidth={3} />
-                  </div>
-                ) : (
-                  <div style={{
-                    width: 26,
-                    height: 26,
-                    borderRadius: '50%',
-                    border: '2px solid #CBD5E1',
-                    background: '#FFFFFF',
-                    flexShrink: 0
-                  }} />
-                )}
+          {reminders.map((reminder) => {
+            const time24 = parseTimeTo24h(reminder.time) || reminder.time;
+            const friendly = format12Hour(time24);
 
-                <div>
-                  {/* Clean text strictly with NO strike-through line */}
-                  <div style={{
-                    fontSize: 15,
-                    fontWeight: reminder.done ? 700 : 500,
-                    color: reminder.done ? '#15803D' : '#1F2937',
-                    textDecoration: 'none'
-                  }}>
-                    {reminder.text}
-                  </div>
+            return (
+              <div
+                key={reminder.id}
+                onClick={() => toggle(reminder.id)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '16px 20px',
+                  borderRadius: 12,
+                  border: '1.5px solid',
+                  borderColor: reminder.done ? '#22C55E' : '#E5E7EB',
+                  background: reminder.done ? '#F0FDF4' : '#FFFFFF',
+                  boxShadow: reminder.done ? '0 4px 12px rgba(34, 197, 94, 0.08)' : '0 2px 6px rgba(0,0,0,0.02)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  gap: 16
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                  {reminder.done ? (
+                    <div style={{
+                      width: 26,
+                      height: 26,
+                      borderRadius: '50%',
+                      background: '#22C55E',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0
+                    }}>
+                      <Check size={16} color="#FFFFFF" strokeWidth={3} />
+                    </div>
+                  ) : (
+                    <div style={{
+                      width: 26,
+                      height: 26,
+                      borderRadius: '50%',
+                      border: '2px solid #CBD5E1',
+                      background: '#FFFFFF',
+                      flexShrink: 0
+                    }} />
+                  )}
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#6B7280' }}>
-                      <Clock size={13} />
-                      {reminder.time}
-                    </span>
+                  <div>
+                    {/* Clear text with strictly NO strike-through line */}
+                    <div style={{
+                      fontSize: 15,
+                      fontWeight: reminder.done ? 700 : 500,
+                      color: reminder.done ? '#15803D' : '#1F2937',
+                      textDecoration: 'none'
+                    }}>
+                      {reminder.text}
+                    </div>
 
-                    {reminder.done && (
-                      <span style={{
-                        fontSize: 11,
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+                      <span style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: 5, 
+                        fontSize: 12, 
                         fontWeight: 700,
-                        color: '#15803D',
-                        background: '#DCFCE7',
+                        color: reminder.done ? '#15803D' : '#4B5563',
+                        background: reminder.done ? '#DCFCE7' : '#F3F4F6',
                         padding: '2px 8px',
-                        borderRadius: 10
+                        borderRadius: 6
                       }}>
-                        Active
+                        <Clock size={12} />
+                        Exact Time: {friendly}
                       </span>
-                    )}
+
+                      {reminder.lastFired && (
+                        <span style={{ fontSize: 11, color: '#059669', fontWeight: 600 }}>
+                          ✓ Alert triggered today
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {/* Instant Notify Button */}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    triggerPushNotification('⏰ AnemiaAI Care Alert', reminder.text);
-                  }}
-                  title="Notify now"
-                  style={{
-                    background: '#FEF2F2',
-                    border: '1px solid #FCA5A5',
-                    borderRadius: 8,
-                    padding: '8px 14px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    fontSize: 13,
-                    color: '#B91C1C',
-                    fontWeight: 700
-                  }}
-                >
-                  <Send size={13} />
-                  <span>Notify Now</span>
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {/* Instant Test Alert */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      triggerPushNotification(`⏰ Alert (${friendly})`, reminder.text);
+                    }}
+                    title="Test alert now"
+                    style={{
+                      background: '#FEF2F2',
+                      border: '1px solid #FCA5A5',
+                      borderRadius: 8,
+                      padding: '8px 12px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      fontSize: 12,
+                      color: '#B91C1C',
+                      fontWeight: 700
+                    }}
+                  >
+                    <Bell size={13} />
+                    <span>Test Ring</span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={(e) => remove(reminder.id, e)}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: '#9CA3AF',
-                    cursor: 'pointer',
-                    padding: 6,
-                    borderRadius: 6,
-                    transition: 'color 0.2s ease'
-                  }}
-                  title="Remove reminder"
-                >
-                  <Trash2 size={16} />
-                </button>
+                  <button
+                    type="button"
+                    onClick={(e) => remove(reminder.id, e)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#9CA3AF',
+                      cursor: 'pointer',
+                      padding: 6,
+                      borderRadius: 6
+                    }}
+                    title="Remove reminder"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </PageLayout>
