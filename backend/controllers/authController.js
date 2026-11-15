@@ -8,7 +8,9 @@ const generateToken = (userId) =>
 const register = async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
-    if (!name || !email || !password) return res.status(400).json({ error: 'Name, email and password are required.' });
+    if (!name || !email || !password || typeof name !== 'string' || typeof email !== 'string' || typeof password !== 'string') {
+      return res.status(400).json({ error: 'Valid name, email and password are required.' });
+    }
     if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
     const existing = await User.findOne({ email: email.toLowerCase().trim() });
     if (existing) return res.status(409).json({ error: 'An account with this email already exists.' });
@@ -27,7 +29,9 @@ const register = async (req, res) => {
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
+    if (!email || !password || typeof email !== 'string' || typeof password !== 'string') {
+      return res.status(400).json({ error: 'Valid email and password are required.' });
+    }
     const user = await User.findOne({ email: email.toLowerCase().trim() });
     if (!user) return res.status(401).json({ error: 'Invalid email or password.' });
     const isMatch = await user.comparePassword(password);

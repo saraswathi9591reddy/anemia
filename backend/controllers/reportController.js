@@ -4,16 +4,20 @@ const createReport = async (req, res) => {
   try {
     const { hb, rbc, mcv, mch, mchc, hematocrit, rdw, ferritin, reportDate, ocrExtracted, ocrConfirmed, uploadedFileName } = req.body;
 
+    if (hb === undefined || hb === null || String(hb).trim() === '' || isNaN(parseFloat(hb))) {
+      return res.status(400).json({ error: 'Haemoglobin (Hb) value is required and must be a valid number.' });
+    }
+
     const report = new BloodReport({
       userId: req.user._id,
-      hb: hb ? parseFloat(hb) : undefined,
-      rbc: rbc ? parseFloat(rbc) : undefined,
-      mcv: mcv ? parseFloat(mcv) : undefined,
-      mch: mch ? parseFloat(mch) : undefined,
-      mchc: mchc ? parseFloat(mchc) : undefined,
-      hematocrit: hematocrit ? parseFloat(hematocrit) : undefined,
-      rdw: rdw ? parseFloat(rdw) : undefined,
-      ferritin: ferritin ? parseFloat(ferritin) : undefined,
+      hb: parseFloat(hb),
+      rbc: rbc !== undefined && rbc !== null && rbc !== '' && !isNaN(parseFloat(rbc)) ? parseFloat(rbc) : undefined,
+      mcv: mcv !== undefined && mcv !== null && mcv !== '' && !isNaN(parseFloat(mcv)) ? parseFloat(mcv) : undefined,
+      mch: mch !== undefined && mch !== null && mch !== '' && !isNaN(parseFloat(mch)) ? parseFloat(mch) : undefined,
+      mchc: mchc !== undefined && mchc !== null && mchc !== '' && !isNaN(parseFloat(mchc)) ? parseFloat(mchc) : undefined,
+      hematocrit: hematocrit !== undefined && hematocrit !== null && hematocrit !== '' && !isNaN(parseFloat(hematocrit)) ? parseFloat(hematocrit) : undefined,
+      rdw: rdw !== undefined && rdw !== null && rdw !== '' && !isNaN(parseFloat(rdw)) ? parseFloat(rdw) : undefined,
+      ferritin: ferritin !== undefined && ferritin !== null && ferritin !== '' && !isNaN(parseFloat(ferritin)) ? parseFloat(ferritin) : undefined,
       reportDate: reportDate || Date.now(),
       uploadedFileName: uploadedFileName || '',
       ocrExtracted: ocrExtracted || false,

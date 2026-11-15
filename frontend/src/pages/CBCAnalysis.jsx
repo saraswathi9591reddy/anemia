@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Upload, FileText, Camera, CheckCircle, AlertCircle, ChevronRight, X, HeartPulse } from 'lucide-react';
+import { Upload, FileText, Camera, CheckCircle, AlertCircle, ChevronRight, X, HeartPulse, Activity, Download, Sparkles } from 'lucide-react';
 import PageLayout from './PageLayout';
 import api from '../api/client';
 
@@ -71,6 +71,8 @@ function CBCAnalysis() {
   const [scanData, setScanData] = useState({});
 
   const [saving, setSaving] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [inlineAssessment, setInlineAssessment] = useState(null);
   const [error, setError] = useState('');
   const [reportDate, setReportDate] = useState(new Date().toISOString().split('T')[0]);
 
@@ -151,6 +153,46 @@ function CBCAnalysis() {
     } catch {
       setScanStatus('done');
       setScanMessage('Pregnancy scan uploaded.');
+    }
+  };
+
+  const handleAutoAnalyze = async () => {
+    if (!values.hb || String(values.hb).trim() === '') {
+      setError('Please enter your Haemoglobin (Hb) value below before analyzing.');
+      const hbInput = document.getElementById('cbc-field-hb');
+      if (hbInput) hbInput.focus();
+      return;
+    }
+
+    setError('');
+    setAnalyzing(true);
+    setInlineAssessment(null);
+    try {
+      const body = {
+        ...Object.fromEntries(Object.entries(values).filter(([, v]) => v !== '' && v !== null && v !== undefined)),
+        reportDate,
+        ocrExtracted: ocrStatus === 'done',
+        ocrConfirmed,
+        uploadedFileName: file?.name || '',
+      };
+      const reportRes = await api.post('/reports', body);
+      const reportId = reportRes.report?._id;
+
+      const assessRes = await api.post('/assessments', {
+        bloodReportId: reportId,
+        symptoms: [],
+        pregnancyWeek: scanData.gestationalWeek ? Number(scanData.gestationalWeek) : undefined,
+      });
+
+      setInlineAssessment(assessRes.assessment);
+      setTimeout(() => {
+        const el = document.getElementById('risk-level-result-section');
+        if (el) el.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    } catch (err) {
+      setError(err.message || 'Failed to analyze report. Please check your network and try again.');
+    } finally {
+      setAnalyzing(false);
     }
   };
 
@@ -322,17 +364,114 @@ function CBCAnalysis() {
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: 16, marginTop: 24, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 16, marginTop: 24, alignItems: 'center', flexWrap: 'wrap' }}>
           <button
             className="btn-submit"
-            style={{ width: 'auto', padding: '12px 32px', display: 'flex', alignItems: 'center', gap: 8 }}
+            style={{ width: 'auto', padding: '14px 28px', display: 'flex', alignItems: 'center', gap: 8, background: '#C0392B', color: '#fff', fontWeight: 600, borderRadius: 8 }}
+            onClick={handleAutoAnalyze}
+            disabled={analyzing || saving}
+          >
+            {analyzing ? (
+              <>
+                <div className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} />
+                <span>Analyzing CBC & Risk Level...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles size={18} />
+                <span>Analyze & Show Risk Level</span>
+              </>
+            )}
+          </button>
+
+          <button
+            type="button"
+            style={{ width: 'auto', padding: '12px 24px', display: 'flex', alignItems: 'center', gap: 8, background: '#F8F9FA', border: '1px solid #D1D5DB', borderRadius: 8, cursor: 'pointer', fontWeight: 500 }}
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || analyzing}
           >
             {saving ? 'Saving...' : <><span>Continue to Symptom Check</span><ChevronRight size={16} /></>}
           </button>
-          <p style={{ fontSize: 13, color: '#9CA3AF' }}>Next: 8 quick symptom questions to complete your screening.</p>
         </div>
+
+        {/* Inline Risk Level Result Card */}
+        {inlineAssessment && (
+          <div id="risk-level-result-section" style={{ marginTop: 32, padding: 24, borderRadius: 12, border: '2px solid', borderColor: inlineAssessment.screeningCategory === 'no_anemia' ? '#2ECC71' : inlineAssessment.screeningCategory === 'mild_anemia' ? '#F1C40F' : inlineAssessment.screeningCategory === 'moderate_anemia' ? '#E67E22' : '#E74C3C', background: '#FFFFFF', boxShadow: '0 4px 16px rgba(0,0,0,0.06)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, borderBottom: '1px solid #F3F4F6', paddingBottom: 16, marginBottom: 16 }}>
+              <div>
+                <span style={{
+                  display: 'inline-block',
+                  padding: '6px 14px',
+                  borderRadius: 20,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  background: inlineAssessment.screeningCategory === 'no_anemia' ? '#D4EDDA' : inlineAssessment.screeningCategory === 'mild_anemia' ? '#FFF3CD' : inlineAssessment.screeningCategory === 'moderate_anemia' ? '#FFE8D6' : '#F8D7DA',
+                  color: inlineAssessment.screeningCategory === 'no_anemia' ? '#155724' : inlineAssessment.screeningCategory === 'mild_anemia' ? '#856404' : inlineAssessment.screeningCategory === 'moderate_anemia' ? '#A04000' : '#721C24'
+                }}>
+                  {inlineAssessment.screeningCategory ? inlineAssessment.screeningCategory.replace('_', ' ') : 'Screening Complete'}
+                </span>
+                <h3 style={{ fontSize: 22, marginTop: 8, marginBottom: 4, fontWeight: 700 }}>
+                  Risk Level: {inlineAssessment.screeningCategory === 'no_anemia' ? 'No Anemia Detected' : inlineAssessment.screeningCategory === 'mild_anemia' ? 'Mild Anemia Risk' : inlineAssessment.screeningCategory === 'moderate_anemia' ? 'Moderate Anemia Risk' : 'Severe Anemia Risk'}
+                </h3>
+                <p style={{ color: '#6B7280', fontSize: 13, margin: 0 }}>
+                  Based on WHO 2011 Pregnancy Guidelines (Haemoglobin: <strong>{inlineAssessment.hbValue || values.hb} g/dL</strong>)
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  className="btn-submit"
+                  style={{ width: 'auto', padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 6, fontSize: 14 }}
+                  onClick={() => navigate(`/ai-analysis/${inlineAssessment._id}`)}
+                >
+                  <Activity size={16} />
+                  <span>View Full Details</span>
+                </button>
+                <a
+                  href={`/api/download/assessment/${inlineAssessment._id}`}
+                  download
+                  style={{ textDecoration: 'none' }}
+                >
+                  <button
+                    type="button"
+                    style={{ width: 'auto', padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, background: '#F3F4F6', border: '1px solid #D1D5DB', borderRadius: 8, cursor: 'pointer' }}
+                  >
+                    <Download size={16} />
+                    <span>Download PDF</span>
+                  </button>
+                </a>
+              </div>
+            </div>
+
+            {/* Factors Found */}
+            {inlineAssessment.factors && inlineAssessment.factors.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <h4 style={{ fontSize: 14, fontWeight: 600, color: '#374151', marginBottom: 8 }}>Key Extracted Indicators:</h4>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {inlineAssessment.factors.map((f, i) => (
+                    <span key={i} style={{ background: '#F3F4F6', padding: '4px 10px', borderRadius: 6, fontSize: 13, color: '#1F2937' }}>
+                      {f}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Recommendations */}
+            {inlineAssessment.recommendations && inlineAssessment.recommendations.length > 0 && (
+              <div>
+                <h4 style={{ fontSize: 14, fontWeight: 600, color: '#374151', marginBottom: 8 }}>Clinical Recommendations:</h4>
+                <ul style={{ paddingLeft: 20, margin: 0, fontSize: 13, color: '#4B5563', lineHeight: 1.6 }}>
+                  {inlineAssessment.recommendations.slice(0, 4).map((rec, i) => (
+                    <li key={i}>{rec}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </PageLayout>
   );
