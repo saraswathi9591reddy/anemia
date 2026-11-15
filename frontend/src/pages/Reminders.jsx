@@ -1,71 +1,154 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
   Bell, BellRing, CheckCircle2, Circle, Clock, Plus, Trash2, 
-  Sparkles, Check, X, Volume2, ShieldCheck
+  Sparkles, Check, X, Volume2, ShieldCheck, PlayCircle, AlertCircle
 } from 'lucide-react';
 import PageLayout from './PageLayout';
 
+// Synthesize pleasant notification chime using Web Audio API (no external file needed)
+function playChimeSound() {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    const now = ctx.currentTime;
+
+    // First tone (pleasant high ding)
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(880, now); // A5
+    osc1.frequency.exponentialRampToValueAtTime(1318.5, now + 0.12); // E6
+    gain1.gain.setValueAtTime(0.35, now);
+    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.6);
+
+    // Second bell tone
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'triangle';
+    osc2.frequency.setValueAtTime(1760, now + 0.15); // A6
+    gain2.gain.setValueAtTime(0.2, now + 0.15);
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(now + 0.15);
+    osc2.stop(now + 0.8);
+  } catch (err) {
+    console.warn('Audio chime note:', err);
+  }
+}
+
 const INITIAL_REMINDERS = [
-  { id: 1, text: 'Take prescribed iron supplement with fresh orange juice', time: '08:30 AM', category: 'Medication', done: false, notified: false },
-  { id: 2, text: 'Drink hydration water with lemon', time: '11:00 AM', category: 'Hydration', done: true, notified: true },
-  { id: 3, text: 'Mid-day snack: Pumpkin seeds or dried apricots', time: '04:00 PM', category: 'Diet', done: false, notified: false },
-  { id: 4, text: 'Pack recent CBC reports for prenatal doctor visit', time: 'Tomorrow 10:00 AM', category: 'Doctor', done: false, notified: false },
+  { id: 1, text: 'Drink hydration water with lemon & mint', time: '10:00 AM', category: 'Hydration', done: true },
+  { id: 2, text: 'Take prescribed iron supplement with fresh orange juice', time: '01:00 PM', category: 'Medication', done: false },
+  { id: 3, text: 'Mid-day healthy snack: Pumpkin seeds or dried apricots', time: '04:30 PM', category: 'Diet', done: false },
+  { id: 4, text: 'Evening reminder: 1 glass of water & light prenatal walk', time: '07:00 PM', category: 'Activity', done: false },
 ];
 
 function Reminders() {
   const [reminders, setReminders] = useState(INITIAL_REMINDERS);
   const [newText, setNewText] = useState('');
   const [newTime, setNewTime] = useState('');
-  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [permissionStatus, setPermissionStatus] = useState(
+    typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default'
+  );
   const [activeToast, setActiveToast] = useState(null);
+  const [countdown, setCountdown] = useState(null);
+  const countdownTimerRef = useRef(null);
 
-  // Check if browser supports notifications & existing permission
+  // Sync notification permission state
   useEffect(() => {
     if ('Notification' in window) {
-      if (Notification.permission === 'granted') {
-        setNotificationsEnabled(true);
-      }
+      setPermissionStatus(Notification.permission);
     }
   }, []);
 
-  const triggerNotification = (title, body) => {
-    // 1. In-App Pop-up Toast
+  // System Notification Fire Function
+  const sendRealNotification = (title, body) => {
+    // 1. Play auditory chime sound
+    playChimeSound();
+
+    // 2. In-App Visual Alert Toast
     setActiveToast({ title, body, id: Date.now() });
     setTimeout(() => {
       setActiveToast(null);
-    }, 4500);
+    }, 5000);
 
-    // 2. Native System / Browser Notification (if supported & permitted)
+    // 3. Real OS / Windows / Browser Desktop Notification Banner (like Instagram/WhatsApp)
     if ('Notification' in window && Notification.permission === 'granted') {
       try {
-        new Notification(title, {
+        const notif = new Notification(title, {
           body,
           icon: '/logo.png',
+          badge: '/logo.png',
+          tag: 'anemiaai-reminder-' + Date.now(),
+          requireInteraction: true, // Keeps it visible in Windows notification tray!
+          silent: false
         });
-      } catch {
-        // Fallback for browsers with strict SW policies
+
+        notif.onclick = () => {
+          window.focus();
+          notif.close();
+        };
+      } catch (e) {
+        console.warn('Browser notification error:', e);
       }
     }
   };
 
-  const requestNotificationPermission = async () => {
+  const handleRequestPermission = async () => {
     if (!('Notification' in window)) {
-      triggerNotification('Notice', 'Web notifications are not supported in this browser.');
+      sendRealNotification('Notice', 'Desktop notifications are not supported in this browser.');
       return;
     }
 
     try {
       const permission = await Notification.requestPermission();
+      setPermissionStatus(permission);
+
       if (permission === 'granted') {
-        setNotificationsEnabled(true);
-        triggerNotification('🔔 Notifications Enabled!', 'You will receive reminders for iron supplements, hydration, and doctor visits.');
-      } else {
-        triggerNotification('Notification Permission', 'Notifications were disabled. In-app alerts will still be shown.');
+        sendRealNotification(
+          '🔔 Notifications Activated!',
+          'You will now get real desktop notifications for hydration, iron supplements, and appointments.'
+        );
+      } else if (permission === 'denied') {
+        setActiveToast({
+          title: '⚠️ Notifications Blocked',
+          body: 'Notifications are blocked in your browser. Click the lock / tune icon in your address bar to Allow notifications.',
+          id: Date.now()
+        });
       }
-    } catch {
-      setNotificationsEnabled(true);
-      triggerNotification('🔔 Notifications Active', 'In-app reminder notifications are now active.');
+    } catch (e) {
+      console.warn('Permission request error:', e);
     }
+  };
+
+  // Instant 3-Second Test Countdown (lets user switch tabs to verify desktop popup)
+  const startDemoCountdown = (reminderText, reminderTime) => {
+    if (permissionStatus !== 'granted') {
+      handleRequestPermission();
+    }
+
+    setCountdown(3);
+    if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+
+    let left = 3;
+    countdownTimerRef.current = setInterval(() => {
+      left -= 1;
+      setCountdown(left);
+      if (left <= 0) {
+        clearInterval(countdownTimerRef.current);
+        setCountdown(null);
+        sendRealNotification(
+          `🔔 AnemiaAI: Time to ${reminderText || 'Drink Water'}!`,
+          `Scheduled for ${reminderTime || 'Now'}. Stay hydrated and take your prenatal care on time.`
+        );
+      }
+    }, 1000);
   };
 
   const toggle = (id) => {
@@ -73,7 +156,10 @@ function Reminders() {
       if (item.id === id) {
         const nextState = !item.done;
         if (nextState) {
-          triggerNotification('✅ Task Completed & Scheduled', `Reminder: "${item.text}" is active.`);
+          sendRealNotification(
+            '✅ Reminder Scheduled & Active',
+            `"${item.text}" is active for ${item.time}.`
+          );
         }
         return { ...item, done: nextState };
       }
@@ -86,7 +172,7 @@ function Reminders() {
     const item = reminders.find(r => r.id === id);
     setReminders(items => items.filter(item => item.id !== id));
     if (item) {
-      triggerNotification('🗑️ Reminder Removed', `"${item.text}" was removed from your schedule.`);
+      sendRealNotification('🗑️ Reminder Removed', `"${item.text}" removed from schedule.`);
     }
   };
 
@@ -99,49 +185,41 @@ function Reminders() {
       text: newText.trim(),
       time: reminderTime,
       category: 'Care',
-      done: false,
-      notified: false
+      done: true
     };
     setReminders(prev => [item, ...prev]);
-    triggerNotification('🔔 New Reminder Added!', `"${item.text}" scheduled for ${reminderTime}.`);
+    sendRealNotification('🔔 New Reminder Set!', `"${item.text}" scheduled for ${reminderTime}.`);
     setNewText('');
     setNewTime('');
-  };
-
-  const testNotification = () => {
-    triggerNotification(
-      '🔔 Iron Supplement Alert',
-      'Time to take your iron supplement! Pair it with Vitamin C (lemon/orange) to boost absorption.'
-    );
   };
 
   return (
     <PageLayout 
       title="Daily Care Reminders" 
       activePath="/reminders" 
-      description="Keep your supplements, hydration, and prenatal checkups on schedule with live reminders."
+      description="Real-time push notifications and alerts for hydration, iron supplements, and pregnancy health."
     >
-      {/* Floating In-App Toast Notification */}
+      {/* Pop-up In-App Toast */}
       {activeToast && (
         <div style={{
           position: 'fixed',
           top: 24,
           right: 24,
-          zIndex: 9999,
+          zIndex: 99999,
           background: '#FFFFFF',
           border: '2px solid #C0392B',
           borderRadius: 14,
           padding: '16px 20px',
-          boxShadow: '0 12px 32px rgba(192, 57, 43, 0.22)',
+          boxShadow: '0 14px 38px rgba(192, 57, 43, 0.25)',
           display: 'flex',
           alignItems: 'flex-start',
           gap: 14,
-          maxWidth: 400,
+          maxWidth: 420,
           animation: 'slideIn 0.3s ease-out'
         }}>
           <div style={{
-            width: 36,
-            height: 36,
+            width: 38,
+            height: 38,
             borderRadius: '50%',
             background: '#FDEDEC',
             display: 'flex',
@@ -174,112 +252,133 @@ function Reminders() {
         </div>
       )}
 
-      {/* Notification Banner Controls */}
+      {/* Permission & Instagram-Style Notification Banner */}
       <div style={{
-        background: notificationsEnabled 
+        background: permissionStatus === 'granted'
           ? 'linear-gradient(135deg, #F0FDF4 0%, #DCFCE7 100%)' 
           : 'linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%)',
-        border: '1px solid',
-        borderColor: notificationsEnabled ? '#86EFAC' : '#FDBA74',
-        borderRadius: 14,
-        padding: '18px 22px',
+        border: '1.5px solid',
+        borderColor: permissionStatus === 'granted' ? '#86EFAC' : '#FDBA74',
+        borderRadius: 16,
+        padding: '22px 26px',
         marginBottom: 24,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         flexWrap: 'wrap',
-        gap: 14
+        gap: 16,
+        boxShadow: '0 4px 16px rgba(0,0,0,0.03)'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, maxWidth: 600 }}>
           <div style={{
-            width: 42,
-            height: 42,
-            borderRadius: 10,
-            background: notificationsEnabled ? '#BBF7D0' : '#FED7AA',
+            width: 48,
+            height: 48,
+            borderRadius: 12,
+            background: permissionStatus === 'granted' ? '#BBF7D0' : '#FED7AA',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center'
+            justifyContent: 'center',
+            flexShrink: 0
           }}>
-            {notificationsEnabled ? (
-              <BellRing size={22} color="#15803D" />
+            {permissionStatus === 'granted' ? (
+              <BellRing size={26} color="#15803D" />
             ) : (
-              <Bell size={22} color="#C2410C" />
+              <Bell size={26} color="#C2410C" />
             )}
           </div>
           <div>
-            <div style={{ fontWeight: 700, fontSize: 15, color: '#1F2937' }}>
-              {notificationsEnabled ? 'Notifications Are Active & On' : 'Enable Real-Time Reminders'}
+            <div style={{ fontWeight: 700, fontSize: 16, color: '#1F2937', marginBottom: 3 }}>
+              {permissionStatus === 'granted'
+                ? 'Desktop & System Notifications Enabled'
+                : 'Turn On System Notifications (Like Instagram/WhatsApp)'}
             </div>
-            <div style={{ fontSize: 13, color: '#4B5563' }}>
-              {notificationsEnabled 
-                ? 'You will receive pop-ups for each scheduled supplement & care task.' 
-                : 'Turn on notifications so you never miss your daily iron or clinic visits.'}
+            <div style={{ fontSize: 13, color: '#4B5563', lineHeight: 1.5 }}>
+              {permissionStatus === 'granted'
+                ? 'Your browser will sound a chime and show a Windows desktop banner when it is time to drink water or take iron.'
+                : 'Click "Enable Push Notifications" so alerts pop up in your Windows screen corner even if you are on another app!'}
             </div>
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 10 }}>
-          {!notificationsEnabled ? (
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {permissionStatus !== 'granted' ? (
             <button
               type="button"
-              onClick={requestNotificationPermission}
+              onClick={handleRequestPermission}
               className="btn-submit"
               style={{
                 width: 'auto',
-                padding: '10px 20px',
+                padding: '12px 24px',
                 background: '#C0392B',
                 color: '#FFFFFF',
-                borderRadius: 8,
-                fontSize: 13,
-                fontWeight: 600,
+                borderRadius: 10,
+                fontSize: 14,
+                fontWeight: 700,
                 display: 'flex',
                 alignItems: 'center',
-                gap: 6
+                gap: 8,
+                boxShadow: '0 4px 14px rgba(192, 57, 43, 0.25)'
               }}
             >
-              <BellRing size={16} />
-              <span>Turn On Notifications</span>
+              <BellRing size={18} />
+              <span>Enable Push Notifications</span>
             </button>
           ) : (
             <button
               type="button"
-              onClick={testNotification}
+              onClick={() => startDemoCountdown('Drink 1 glass of water now', 'Now')}
+              disabled={countdown !== null}
               style={{
-                padding: '9px 18px',
+                padding: '11px 22px',
                 background: '#FFFFFF',
-                border: '1.5px solid #16A34A',
+                border: '2px solid #16A34A',
                 color: '#15803D',
-                borderRadius: 8,
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: 'pointer',
+                borderRadius: 10,
+                fontSize: 14,
+                fontWeight: 700,
+                cursor: countdown !== null ? 'default' : 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: 6
+                gap: 8,
+                boxShadow: '0 2px 8px rgba(22, 163, 74, 0.15)'
               }}
             >
-              <Volume2 size={16} />
-              <span>Send Test Notification</span>
+              <Volume2 size={18} />
+              <span>
+                {countdown !== null 
+                  ? `Triggering in ${countdown}s (switch tabs to test!)...` 
+                  : 'Test Desktop Alert (3s Countdown)'}
+              </span>
             </button>
           )}
         </div>
       </div>
 
+      {/* Permission Denied Guide (if user blocked notifications) */}
+      {permissionStatus === 'denied' && (
+        <div className="alert alert-error" style={{ marginBottom: 20 }}>
+          <AlertCircle size={18} />
+          <div>
+            <strong>Browser Blocked Notifications:</strong> Look at your browser address bar next to <code>localhost:5173</code>, click the <strong>🔒 View Site Information</strong> icon, and change <strong>Notifications</strong> to <strong>Allow</strong>, then refresh.
+          </div>
+        </div>
+      )}
+
       {/* Add Reminder Card */}
-      <div className="section-card" style={{ marginBottom: 24, borderRadius: 14, padding: '20px 24px' }}>
+      <div className="section-card" style={{ marginBottom: 24, borderRadius: 14, padding: '22px 26px' }}>
         <h3 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 14px 0', display: 'flex', alignItems: 'center', gap: 8, color: '#1F2937' }}>
           <Plus size={18} color="#C0392B" />
-          Add Care Reminder
+          Add Care or Hydration Reminder
         </h3>
         <form onSubmit={addReminder} style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <input
             type="text"
-            placeholder="e.g. Take prenatal iron supplement after lunch"
+            placeholder="e.g. Drink 250ml water or take iron tablet"
             value={newText}
             onChange={e => setNewText(e.target.value)}
             style={{
-              flex: '1 1 260px',
-              padding: '11px 14px',
+              flex: '1 1 280px',
+              padding: '11px 16px',
               borderRadius: 8,
               border: '1px solid #D1D5DB',
               fontSize: 14
@@ -287,12 +386,12 @@ function Reminders() {
           />
           <input
             type="text"
-            placeholder="Time (e.g. 02:00 PM)"
+            placeholder="Time (e.g. 11:30 AM)"
             value={newTime}
             onChange={e => setNewTime(e.target.value)}
             style={{
-              width: 170,
-              padding: '11px 14px',
+              width: 180,
+              padding: '11px 16px',
               borderRadius: 8,
               border: '1px solid #D1D5DB',
               fontSize: 14
@@ -303,7 +402,7 @@ function Reminders() {
             className="btn-submit"
             style={{
               width: 'auto',
-              padding: '11px 22px',
+              padding: '11px 24px',
               borderRadius: 8,
               background: '#C0392B',
               color: '#FFFFFF',
@@ -318,19 +417,25 @@ function Reminders() {
       </div>
 
       {/* Reminders List */}
-      <div className="section-card" style={{ marginBottom: 0, borderRadius: 14, padding: '20px 24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 8, color: '#1F2937' }}>
-            <Bell size={18} color="#C0392B" />
-            Your Daily Schedule
-          </h3>
+      <div className="section-card" style={{ marginBottom: 0, borderRadius: 14, padding: '22px 26px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18, flexWrap: 'wrap', gap: 10 }}>
+          <div>
+            <h3 style={{ fontSize: 17, fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 8, color: '#1F2937' }}>
+              <Bell size={18} color="#C0392B" />
+              Scheduled Care Tasks
+            </h3>
+            <span style={{ fontSize: 13, color: '#6B7280' }}>
+              Click any task to select/toggle. Text remains clear with no strike-through.
+            </span>
+          </div>
+
           <span style={{ 
             fontSize: 12, 
-            fontWeight: 600, 
+            fontWeight: 700, 
             background: '#FEF2F2', 
             color: '#B91C1C', 
-            padding: '3px 10px', 
-            borderRadius: 12 
+            padding: '4px 12px', 
+            borderRadius: 14 
           }}>
             {reminders.filter(r => r.done).length} active of {reminders.length} total
           </span>
@@ -345,15 +450,15 @@ function Reminders() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                padding: '14px 18px',
+                padding: '16px 20px',
                 borderRadius: 12,
                 border: '1.5px solid',
                 borderColor: reminder.done ? '#22C55E' : '#E5E7EB',
                 background: reminder.done ? '#F0FDF4' : '#FFFFFF',
-                boxShadow: reminder.done ? '0 2px 10px rgba(34, 197, 94, 0.1)' : '0 2px 6px rgba(0,0,0,0.02)',
+                boxShadow: reminder.done ? '0 4px 12px rgba(34, 197, 94, 0.08)' : '0 2px 6px rgba(0,0,0,0.02)',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
-                gap: 14
+                gap: 16
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -382,12 +487,12 @@ function Reminders() {
                 )}
 
                 <div>
-                  {/* Clean text without strike-through */}
+                  {/* Clean text strictly with NO strike-through line */}
                   <div style={{
-                    fontSize: 14,
+                    fontSize: 15,
                     fontWeight: reminder.done ? 700 : 500,
                     color: reminder.done ? '#15803D' : '#1F2937',
-                    textDecoration: 'none' // STRICTLY NO STRIKE-THROUGH
+                    textDecoration: 'none'
                   }}>
                     {reminder.text}
                   </div>
@@ -407,7 +512,7 @@ function Reminders() {
                         padding: '2px 8px',
                         borderRadius: 10
                       }}>
-                        Selected & Active
+                        Active & Monitored
                       </span>
                     )}
                   </div>
@@ -415,29 +520,30 @@ function Reminders() {
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {/* Send Alert Now Button */}
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    triggerNotification('🔔 Reminder Triggered', reminder.text);
+                    startDemoCountdown(reminder.text, reminder.time);
                   }}
                   title="Notify now"
                   style={{
-                    background: '#F3F4F6',
-                    border: 'none',
-                    borderRadius: 6,
-                    padding: '6px 10px',
+                    background: '#FEF2F2',
+                    border: '1px solid #FCA5A5',
+                    borderRadius: 8,
+                    padding: '7px 12px',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 4,
+                    gap: 6,
                     fontSize: 12,
-                    color: '#4B5563',
-                    fontWeight: 600
+                    color: '#B91C1C',
+                    fontWeight: 700
                   }}
                 >
                   <Bell size={13} />
-                  <span>Notify</span>
+                  <span>Notify Now</span>
                 </button>
 
                 <button
