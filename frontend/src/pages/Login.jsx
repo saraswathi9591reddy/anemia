@@ -35,9 +35,9 @@ function Login() {
     <div className="auth-page">
       <div className="auth-panel">
         <div className="auth-panel-brand">
-          <img src="/logo.png" alt="AnemiaAI" />
+          <img src="/logo.png" alt="Momucoo" />
           <div>
-            <h2>AnemiaAI</h2>
+            <h2>Momucoo</h2>
             <p>Pregnancy Anemia Screening</p>
           </div>
         </div>

@@ -83,7 +83,7 @@ function Dashboard() {
               <p style={{ opacity: 0.85, fontSize: 14, marginBottom: 4 }}>{greet()},</p>
               <h2 style={{ fontSize: 26, fontWeight: 800, marginBottom: 8 }}>{user?.name}</h2>
               <p style={{ opacity: 0.85, fontSize: 14 }}>
-                {profile?.pregnancyWeek ? `Week ${profile.pregnancyWeek} of pregnancy` : 'Welcome to your AnemiaAI dashboard'}
+                {profile?.pregnancyWeek ? `Week ${profile.pregnancyWeek} of pregnancy` : 'Welcome to your Momucoo dashboard'}
               </p>
             </div>
             <img src="/logo.png" alt="" style={{ width: 80, height: 80, objectFit: 'contain', opacity: 0.9 }} />

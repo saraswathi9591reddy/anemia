@@ -14,8 +14,8 @@ function Home() {
     <div className="home-page">
       <nav className="home-nav">
         <Link to="/" className="home-nav-brand">
-          <img src="/logo.png" alt="AnemiaAI Logo" />
-          <span>AnemiaAI</span>
+          <img src="/logo.png" alt="Momucoo Logo" />
+          <span>Momucoo</span>
         </Link>
         <div className="home-nav-links">
           {isAuthenticated ? (

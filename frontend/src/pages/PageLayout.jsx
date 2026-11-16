@@ -43,8 +43,8 @@ function PageLayout({ title, eyebrow, description, activePath, children }) {
     <div className="dashboard-page">
       <aside className="sidebar">
         <button className="sidebar-brand" onClick={() => navigate(role === 'doctor' ? '/doctor-dashboard' : '/dashboard')}>
-          <img src="/logo.png" alt="AnemiaAI" />
-          <span>AnemiaAI</span>
+          <img src="/logo.png" alt="Momucoo" />
+          <span>Momucoo</span>
         </button>
 
         <p className="menu-section-title">Main Menu</p>
@@ -89,7 +89,7 @@ function PageLayout({ title, eyebrow, description, activePath, children }) {
       <main className="dashboard-main">
         <header className="dashboard-header">
           <div className="header-breadcrumb">
-            <small>AnemiaAI • {role === 'doctor' ? 'Doctor Portal' : 'Patient Portal'}</small>
+            <small>Momucoo • {role === 'doctor' ? 'Doctor Portal' : 'Patient Portal'}</small>
             <h1>{title}</h1>
             {description && <p style={{ fontSize: 13, color: '#6B7280', marginTop: 2 }}>{description}</p>}
           </div>
