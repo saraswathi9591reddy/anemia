@@ -88,17 +88,28 @@ function PageLayout({ title, eyebrow, description, activePath, children }) {
 
       <main className="dashboard-main">
         <header className="dashboard-header" style={{
-          background: '#FFFFFF',
-          borderBottom: '1px solid #F1E4DF',
-          padding: '20px 32px',
-          boxShadow: '0 2px 8px rgba(192, 57, 43, 0.03)'
+          background: 'linear-gradient(135deg, #FFF7F5 0%, #FFF0EC 50%, #FFFFFF 100%)',
+          borderBottom: '1.5px solid #F6D8D0',
+          padding: '24px 36px',
+          boxShadow: '0 4px 16px rgba(192, 57, 43, 0.04)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between'
         }}>
-          <div className="header-breadcrumb">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+          <div className="header-breadcrumb" style={{ maxWidth: 640 }}>
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              background: '#FDEDEC',
+              padding: '4px 12px',
+              borderRadius: 20,
+              marginBottom: 8
+            }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#C0392B', display: 'inline-block' }}></span>
               <small style={{
                 color: '#C0392B',
-                fontWeight: 700,
+                fontWeight: 800,
                 fontSize: 11,
                 letterSpacing: '1px',
                 textTransform: 'uppercase'
@@ -110,13 +121,13 @@ function PageLayout({ title, eyebrow, description, activePath, children }) {
               fontSize: 26,
               fontWeight: 800,
               color: '#1F2937',
-              margin: '2px 0 4px 0',
+              margin: '2px 0 6px 0',
               letterSpacing: '-0.4px'
             }}>
               {title}
             </h1>
             {description && (
-              <p style={{ fontSize: 13.5, color: '#6B7280', margin: 0, lineHeight: 1.45 }}>
+              <p style={{ fontSize: 13.5, color: '#6B7280', margin: 0, lineHeight: 1.5 }}>
                 {description}
               </p>
             )}
