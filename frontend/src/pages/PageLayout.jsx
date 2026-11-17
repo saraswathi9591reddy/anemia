@@ -87,11 +87,39 @@ function PageLayout({ title, eyebrow, description, activePath, children }) {
       </aside>
 
       <main className="dashboard-main">
-        <header className="dashboard-header">
+        <header className="dashboard-header" style={{
+          background: '#FFFFFF',
+          borderBottom: '1px solid #F1E4DF',
+          padding: '20px 32px',
+          boxShadow: '0 2px 8px rgba(192, 57, 43, 0.03)'
+        }}>
           <div className="header-breadcrumb">
-            <small>Momucoo • {role === 'doctor' ? 'Doctor Portal' : 'Patient Portal'}</small>
-            <h1>{title}</h1>
-            {description && <p style={{ fontSize: 13, color: '#6B7280', marginTop: 2 }}>{description}</p>}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#C0392B', display: 'inline-block' }}></span>
+              <small style={{
+                color: '#C0392B',
+                fontWeight: 700,
+                fontSize: 11,
+                letterSpacing: '1px',
+                textTransform: 'uppercase'
+              }}>
+                Momucoo • {role === 'doctor' ? 'Doctor Portal' : 'Patient Portal'}
+              </small>
+            </div>
+            <h1 style={{
+              fontSize: 26,
+              fontWeight: 800,
+              color: '#1F2937',
+              margin: '2px 0 4px 0',
+              letterSpacing: '-0.4px'
+            }}>
+              {title}
+            </h1>
+            {description && (
+              <p style={{ fontSize: 13.5, color: '#6B7280', margin: 0, lineHeight: 1.45 }}>
+                {description}
+              </p>
+            )}
           </div>
           <div className="header-user">
             <div className="header-avatar">{initials}</div>
