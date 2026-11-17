@@ -29,7 +29,18 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Health check
+// Root landing page & Health check
+app.get('/', (req, res) => res.send(`
+  <div style="font-family: sans-serif; text-align: center; padding: 50px;">
+    <h2 style="color: #c0392b;">🩸 AnemiaAI Backend API Server is Running</h2>
+    <p style="color: #555; font-size: 16px;">This is the backend API on port 5000.</p>
+    <div style="margin-top: 25px;">
+      <a href="http://localhost:5173" style="background: #c0392b; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">
+        👉 Open Web App Frontend (http://localhost:5173)
+      </a>
+    </div>
+  </div>
+`));
 app.get('/api/health', (req, res) => res.json({ status: 'OK', app: 'AnemiaAI Backend', timestamp: new Date().toISOString() }));
 
 // Routes
